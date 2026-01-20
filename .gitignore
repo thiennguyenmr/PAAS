@@ -1,0 +1,64 @@
+# =========================
+# Python
+# =========================
+__pycache__/
+*.pyc
+*.pyo
+*.pyd
+*.egg-info/
+.env
+venv/
+.venv/
+
+# =========================
+# Logs & Outputs
+# =========================
+logs/
+*.log
+
+# =========================
+# Environment & Config
+# =========================
+_config/
+.env
+*.env
+config.json
+secret.json
+
+# =========================
+# OS / Editor generated files
+# =========================
+.DS_Store
+Thumbs.db
+
+# VS Code
+.vscode/
+
+# =========================
+# Docker
+# =========================
+# Ignore docker build context garbage
+**/.dockerignore
+docker_init_backup.txt
+
+# =========================
+# Airflow / ETL related
+# =========================
+# Airflow local storage
+airflow/
+dags/__pycache__/
+scripts/__pycache__/
+
+# =========================
+# Byte-compiled / cache
+# =========================
+__pycache__/
+.cache/
+*.pid
+
+# =========================
+# Virtual env folders commonly used
+# =========================
+env/
+ENV/
+env.bak/
