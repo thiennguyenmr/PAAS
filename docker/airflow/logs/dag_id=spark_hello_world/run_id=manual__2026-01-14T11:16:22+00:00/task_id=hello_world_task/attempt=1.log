@@ -1,0 +1,5 @@
+{"timestamp":"2026-01-14T11:16:24.512370Z","level":"info","event":"DAG bundles loaded: dags-folder","logger":"airflow.dag_processing.bundles.manager.DagBundlesManager","filename":"manager.py","lineno":179}
+{"timestamp":"2026-01-14T11:16:24.515349Z","level":"info","event":"Filling up the DagBag from /opt/airflow/dags/spark_minio.py","logger":"airflow.models.dagbag.DagBag","filename":"dagbag.py","lineno":593}
+{"timestamp":"2026-01-14T11:16:24.887886Z","level":"warning","event":"The `airflow.operators.bash.BashOperator` attribute is deprecated. Please use `'airflow.providers.standard.operators.bash.BashOperator'`.","category":"DeprecatedImportWarning","filename":"/opt/airflow/dags/spark_minio.py","lineno":4,"logger":"py.warnings"}
+{"timestamp":"2026-01-14T11:16:24.888126Z","level":"error","event":"Task not found in Dag during start up","dag_id":"spark_hello_world","task_id":"hello_world_task","bundle":"BundleInfo(name='dags-folder', version=None)","path":"spark_minio.py","logger":"task","filename":"task_runner.py","lineno":648}
+{"timestamp":"2026-01-14T11:16:24.891626Z","level":"warning","event":"Process exited abnormally","exit_code":1,"logger":"task"}
