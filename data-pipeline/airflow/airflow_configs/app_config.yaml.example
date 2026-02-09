@@ -1,0 +1,40 @@
+# Spark connection configuration
+# Copy this file to app_config.yaml:
+#   cp app_config.yaml.example app_config.yaml
+
+postgres:
+  maven_package: "org.postgresql:postgresql:42.6.0"
+  driver_class: "org.postgresql.Driver"
+
+sqlserver:
+  maven_package: "com.microsoft.sqlserver:mssql-jdbc:12.4.2.jre11"
+  driver_class: "com.microsoft.sqlserver.jdbc.SQLServerDriver"
+
+oracle:
+  maven_package: "com.oracle.database.jdbc:ojdbc11:23.2.0.0"
+  driver_class: "oracle.jdbc.OracleDriver"
+
+mysql:
+  maven_package: "mysql:mysql-connector-java:8.0.33"
+  driver_class: "com.mysql.cj.jdbc.Driver"
+
+# Object Storage configuration
+# Support for MinIO and AWS S3 via Hadoop AWS module
+
+minio:
+  maven_package: "org.apache.hadoop:hadoop-aws:3.4.2,com.amazonaws:aws-java-sdk-bundle:1.12.638"
+  file_system_impl: "org.apache.hadoop.fs.s3a.S3AFileSystem"
+  path_style_access: true
+  ssl_enabled: false
+  connection_timeout: "60000"
+  socket_timeout: "60000"
+  retry_interval: "5000"
+  max_attempts: "3"
+  keep_alive_time: "60000"
+  multipart_purge_age: "86400000"
+  establish_timeout: "30000"
+  aws_credentials_provider: "org.apache.hadoop.fs.s3a.SimpleAWSCredentialsProvider"
+
+aws_s3:
+  maven_package: "org.apache.hadoop:hadoop-aws:3.4.2,com.amazonaws:aws-java-sdk-bundle:1.12.638"
+  file_system_impl: "org.apache.hadoop.fs.s3a.S3AFileSystem"

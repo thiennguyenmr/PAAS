@@ -1,81 +1,172 @@
-<h1 align="center">🚀 Local LLM Ops Data Stack</h1>
+<h1 align="center">PAAS - Platform as a Stack</h1>
 
-<p align="center">This is a Modern Data Stack environment running entirely on Docker Local, optimized for RAG (Retrieval Augmented Generation) pipelines and LLM Fine-tuning workflows.</p>
+<p align="center">A self-hosted Modern Data Stack running entirely on Docker, designed for RAG (Retrieval Augmented Generation) pipelines and LLM Fine-tuning workflows. From raw data ingestion to vector search and knowledge graphs — all orchestrated locally.</p>
 
+---
 
-## The system integrates best-in-class tools for each stage of the data lifecycle:
+## Overview
 
-1. **MinIO**: Data Lake (S3-compatible Object Storage).
+PAAS combines infrastructure provisioning and data pipeline development into a single monorepo. It provides a complete data lifecycle platform with distributed processing, multi-model storage (relational, object, vector, graph), workflow orchestration, and observability.
 
-2. **Postgre**: Application database.
+The project is split into two main areas:
 
-3. **Apache Spark**: Data Processing (Large-scale transformation).
+| Directory | Purpose |
+| :--- | :--- |
+| **[`infra/`](infra/)** | Docker services, networking, monitoring, and all infrastructure configuration |
+| **[`data-pipeline/`](data-pipeline/)** | Spark jobs, Airflow DAGs, ETL logic, and connector modules |
 
-4. **Milvus**: Vector Database (Storage for AI Embeddings).
+---
 
-5. **Apache Airflow**: Orchestrator (Manage the entire pipeline).
+## Architecture
 
-## 📋 Prerequisites
- Due to the resource-intensive nature of these Java-based services, your machine must meet the following requirements:
-
-* **RAM**: Minimum 16GB (Recommended 32GB for smooth operation).
-
-* **CPU**: 4 Cores or more.
-
-* **Disk**: SSD with at least 20GB of free space.
-
-* **Software**: Docker Desktop & Docker Compose.
-
-## 🛠️ Installation & Setup
-
-### 1. Configure Environment Variables
-
-Create a `.env` file in the same directory as your `docker-compose.yaml` and ensure it has the necessary configurations (Airbyte DB, Airflow UID).
-
-### 2. Start the Stack
-
-Run the following command to pull images and start the containers:
-
-```bash
-docker compose up -d
+```text
+                        ┌──────────────────────────────────┐
+                        │        Apache Airflow             │
+                        │     (Workflow Orchestration)       │
+                        └──────────┬───────────────────────┘
+                                   │ triggers
+                        ┌──────────▼───────────────────────┐
+                        │        Apache Spark               │
+                        │   (Distributed Data Processing)   │
+                        │    1 Master  +  2 Workers          │
+                        └──┬───────┬───────┬───────┬───────┘
+                           │       │       │       │
+              ┌────────────▼──┐ ┌──▼────┐ ┌▼─────┐ ┌▼──────┐
+              │  MinIO (S3)   │ │Postgre│ │Milvus│ │ Neo4j │
+              │  Data Lake    │ │  SQL  │ │Vector│ │ Graph │
+              └───────────────┘ └───────┘ └──────┘ └───────┘
+                           │
+              ┌────────────▼──────────────────────┐
+              │  Prometheus + Grafana + cAdvisor   │
+              │         (Observability)            │
+              └───────────────────────────────────┘
 ```
-*Note: The first run may take 10-15 minutes to download all Docker images.*
 
-## 🔗 Access Points
+### Technology Stack
 
-Keep this table handy to access your services:
+| Layer | Technology | Role |
+| :--- | :--- | :--- |
+| **Orchestration** | Apache Airflow 3.1.4 | DAG scheduling, pipeline management |
+| **Processing** | Apache Spark 3.5.8 | Distributed ETL, data transformation |
+| **Object Storage** | MinIO | S3-compatible Data Lake (Parquet files) |
+| **Relational DB** | PostgreSQL 16 | Application data, Airflow metadata |
+| **Vector DB** | Milvus 2.6 + Etcd | Embedding storage for RAG |
+| **Graph DB** | Neo4j 5.x | Knowledge graph relationships |
+| **Monitoring** | Prometheus, Grafana, cAdvisor | Metrics, dashboards, container stats |
 
-| Service | URL | Username | Password |
-| :--- | :--- | :--- | :--- |
-| **Airflow** | [http://localhost:8081](http://localhost:8081) | `admin` | `admin` |
-| **MinIO Console** | [http://localhost:9001](http://localhost:9001) | `minioadmin` | `minioadmin` |
-| **Spark Master** | [http://localhost:8080](http://localhost:8080) | N/A | N/A |
-| **Milvus** | `localhost:19530` | N/A | N/A |
-| **MinIO API** | `http://localhost:9000` | `minioadmin` | `minioadmin` |
+---
 
-## ⚙️ Configuration Notes
+## Data Pipeline: Medallion Architecture
 
-### 1. Connecting to MinIO (S3) from Airbyte/Spark
+The ETL pipelines follow a **Medallion Architecture** for data quality and traceability:
 
-Since all services run within the internal Docker network (`llm-ops-net`), **DO NOT** use `localhost` when configuring internal connections. Use the following settings:
+```text
+Source Systems ──► Raw (Inbound) ──► Bronze (Cleaned) ──► Silver (Transformed) ──► Gold (Downstream)
+  CSV / DB             MinIO            MinIO                MinIO               Milvus / Neo4j
+```
 
-* **Endpoint URL:** `http://minio:9000`
-* **Access Key:** `minioadmin`
-* **Secret Key:** `minioadmin`
-* **Region:** `us-east-1` (Default)
-* **Force Path Style:** `True` (Mandatory for MinIO)
+1. **Raw**: Extract from CSV files and PostgreSQL, store as Parquet in MinIO
+2. **Bronze**: Schema normalization, deduplication, basic cleaning
+3. **Silver**: Business logic, aggregations, feature engineering
+4. **Gold**: Load into Milvus (vector search) and Neo4j (knowledge graph)
 
-### 2. MinIO Version Pinning
+### Available Pipelines
 
-This stack uses a specific release of MinIO to ensure stability and reproducibility:
-* **Image:** `minio/minio:RELEASE.2025-09-07T16-13-09Z`
+| Pipeline | Description |
+| :--- | :--- |
+| `hilo_complete_pipeline` | Orchestrates game round + chat pipelines in parallel |
+| `hilo_game_round_pipeline` | Processes game round data (bets, outcomes, sessions) |
+| `hilo_game_chat_pipeline` | Processes chat message data (user messages, channels) |
 
-### 3. Data Persistence (Volumes)
+Each pipeline runs through sequential Spark jobs: **ingest → merge → quality check → clean → transform → vectorize → graph load**.
 
-Your data is persisted in the following Docker Volumes:
+---
 
-* `minio_data`: S3 bucket objects.
-* `milvus_data`: Vector embeddings.
-* `./dags`: Local directory for Airflow Python DAGs (Mapped from host to container).
+## Quick Start
 
+### Prerequisites
 
+- **RAM**: 16GB minimum (32GB recommended)
+- **CPU**: 4+ cores
+- **Disk**: 20GB+ SSD free space
+- **Docker Desktop**: 16GB memory allocated to Docker
+
+### Setup
+
+1. Configure environment variables:
+   ```bash
+   cp infra/.env.example infra/.env   # edit with your settings
+   ```
+
+2. Start the infrastructure:
+   ```bash
+   cd infra
+   docker compose up -d --build
+   ```
+
+3. Access the services:
+
+   | Service | URL | Credentials |
+   | :--- | :--- | :--- |
+   | Airflow | [http://localhost:6031](http://localhost:6031) | `admin` / `admin123` |
+   | MinIO Console | [http://localhost:6001](http://localhost:6001) | `minioadmin` / `minioadmin` |
+   | Spark Master | [http://localhost:6020](http://localhost:6020) | — |
+   | Grafana | [http://localhost:6052](http://localhost:6052) | `admin` / `admin` |
+   | Neo4j Browser | [http://localhost:6007](http://localhost:6007) | `neo4j` / `graph_secret_password` |
+
+---
+
+## Project Structure
+
+```text
+PAAS/
+├── infra/                          # Infrastructure
+│   ├── docker/                     # Custom Dockerfiles & configs
+│   │   ├── airflow/                #   Airflow image + entrypoints
+│   │   ├── spark/                  #   Spark image (Python/Java)
+│   │   ├── monitoring/             #   Prometheus & Grafana configs
+│   │   └── storages/               #   DB init scripts (PostgreSQL)
+│   ├── mnt/data_drive/             # Persistent volume mounts
+│   ├── scripts/                    # Setup & maintenance scripts
+│   ├── docker-compose.yaml         # Service orchestration
+│   ├── .env                        # Environment variables
+│   ├── README.md                   # Infrastructure docs
+│   └── TROUBLESHOOTING.md          # Common issues & fixes
+│
+└── data-pipeline/                  # Data Processing
+    ├── airflow/                    # Orchestration layer
+    │   ├── airflow_dags/           #   DAG definitions
+    │   ├── airflow_configs/        #   Connection profiles
+    │   └── airflow_modules/        #   Shared utilities
+    └── spark/                      # Processing layer
+        ├── spark_jobs/             #   Pipeline job scripts
+        │   ├── game_round/         #     Game round ETL (7 stages)
+        │   ├── game_chat/          #     Chat message ETL (7 stages)
+        │   └── test_pipeline/      #     Validation scripts
+        ├── spark_modules/          #   Connectors & processing libs
+        └── spark_configs/          #   Spark setup & JAR profiles
+```
+
+---
+
+## Documentation
+
+- **[Infrastructure README](infra/README.md)** — Service configuration, networking, access points, remote SSH tunneling, troubleshooting
+- **[Data Pipeline README](data-pipeline/README.md)** — Pipeline architecture, local development setup, Spark job execution, Airflow integration
+- **[Troubleshooting Guide](infra/TROUBLESHOOTING.md)** — PostgreSQL recovery, permission issues, container debugging
+
+---
+
+## Networking
+
+All services communicate over the `llm-ops-net` Docker bridge network. Use **service names** (not `localhost`) for inter-service connections:
+
+| Service | Internal Address |
+| :--- | :--- |
+| MinIO S3 API | `minio:9000` |
+| PostgreSQL | `app-postgres:5432` |
+| Milvus | `milvus-standalone:19530` |
+| Neo4j Bolt | `neo4j-server:7687` |
+| Spark Master | `spark-master:7077` |
+
+External access uses the `6000-6059` port range. For remote servers, use SSH tunneling — see the [infra README](infra/README.md#-remote-access-ssh-tunneling).

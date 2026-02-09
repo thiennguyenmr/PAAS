@@ -1,0 +1,18 @@
+# File parsing configuration
+# Copy this file to file_config.yaml:
+#   cp file_config.yaml.example file_config.yaml
+
+csv_path: "data.csv"
+encoding: "utf-8"
+delimiter: ","
+header: true
+quote_char: "\""
+escape_char: "\\"
+skip_rows: 0
+columns:
+  - name: "id"
+    type: "int"
+  - name: "name"
+    type: "string"
+  - name: "created_at"
+    type: "datetime"

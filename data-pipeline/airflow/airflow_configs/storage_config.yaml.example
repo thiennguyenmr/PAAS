@@ -1,0 +1,21 @@
+# Object Storage Connection Details
+# Copy this file to storage_config.yaml and fill in your values:
+#   cp storage_config.yaml.example storage_config.yaml
+
+minio_bronze:
+  endpoint: "minio:9000"
+  access_key: "your_access_key"
+  secret_key: "your_secret_key"
+  bucket: "bronze"
+
+minio_silver:
+  endpoint: "minio:9000"
+  access_key: "your_access_key"
+  secret_key: "your_secret_key"
+  bucket: "silver"
+
+minio_sharepoint:
+  endpoint: "minio:9000"
+  access_key: "your_access_key"
+  secret_key: "your_secret_key"
+  bucket: "sharepoint"
