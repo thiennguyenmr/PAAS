@@ -1,0 +1,576 @@
+# ==========================================
+# NETWORKS
+# ==========================================
+networks:
+  llm-ops-net:
+    driver: bridge
+
+# ==========================================
+# AIRFLOW INIT
+# ==========================================
+x-airflow-env: &airflow-env
+  AIRFLOW__CORE__EXECUTOR: ${AIRFLOW__CORE__EXECUTOR}
+  AIRFLOW__CORE__LOAD_EXAMPLES: ${AIRFLOW__CORE__LOAD_EXAMPLES}
+  AIRFLOW__CORE__FERNET_KEY: ${AIRFLOW__CORE__FERNET_KEY}
+  AIRFLOW__CORE__DAGS_FOLDER: ${AIRFLOW__CORE__DAGS_FOLDER}
+  AIRFLOW__CORE__DAGS_ARE_PAUSED_AT_CREATION: ${AIRFLOW__CORE__DAGS_ARE_PAUSED_AT_CREATION}
+  AIRFLOW__DATABASE__SQL_ALCHEMY_CONN: ${AIRFLOW__DATABASE__SQL_ALCHEMY_CONN}
+  AIRFLOW_POSTGRES_HOST: ${AIRFLOW_POSTGRES_HOST}
+  AIRFLOW_POSTGRES_PORT: ${AIRFLOW_POSTGRES_PORT}
+  AIRFLOW_POSTGRES_USER: ${AIRFLOW_POSTGRES_USER}
+  AIRFLOW_POSTGRES_PASSWORD: ${AIRFLOW_POSTGRES_PASSWORD}
+  AIRFLOW_POSTGRES_DB: ${AIRFLOW_POSTGRES_DB}
+  AIRFLOW_ADMIN_USERNAME: ${AIRFLOW_ADMIN_USERNAME}
+  AIRFLOW_ADMIN_PASSWORD: ${AIRFLOW_ADMIN_PASSWORD}
+  AIRFLOW_ADMIN_EMAIL: ${AIRFLOW_ADMIN_EMAIL}
+  AIRFLOW__CORE__EXECUTION_API_SERVER_URL: ${AIRFLOW__CORE__EXECUTION_API_SERVER_URL}
+  AIRFLOW__WEBSERVER__BASE_URL: ${AIRFLOW__WEBSERVER__BASE_URL}
+  PYTHONPATH: /opt/spark/work-dir:/opt/airflow
+  AIRFLOW__API_AUTH__JWT_SECRET: ${AIRFLOW__API_AUTH__JWT_SECRET}
+  AIRFLOW__API_AUTH__JWT_ISSUER: ${AIRFLOW__API_AUTH__JWT_ISSUER}
+  AIRFLOW__API_AUTH__JWT_EXPIRATION_TIME_SECONDS: ${AIRFLOW__API_AUTH__JWT_EXPIRATION_TIME_SECONDS}
+  AIRFLOW__API__SECRET_KEY: ${AIRFLOW__API__SECRET_KEY}
+  AIRFLOW__WEBSERVER__SECRET_KEY: ${AIRFLOW__WEBSERVER__SECRET_KEY}
+  AIRFLOW__CORE__SIMPLE_AUTH_MANAGER_USERS: ${AIRFLOW__CORE__SIMPLE_AUTH_MANAGER_USERS}
+  AIRFLOW__CORE__SIMPLE_AUTH_MANAGER_PASSWORDS_FILE: ${AIRFLOW__CORE__SIMPLE_AUTH_MANAGER_PASSWORDS_FILE}
+  TZ: ${TIMEZONE}
+  # Log S3 configuration
+  AIRFLOW__LOGGING__REMOTE_LOGGING: 'False'
+  # AIRFLOW__LOGGING__REMOTE_BASE_LOG_FOLDER: 's3://ops-logs/airflow'
+  # AIRFLOW__LOGGING__REMOTE_LOG_CONN_ID: 'aws_default'
+  # AIRFLOW__LOGGING__ENCRYPT_S3_LOGS: 'False'
+
+# =======================================================
+# SERVICES
+# =======================================================
+services:
+  # -----------------------------------------------------
+  # 1. STORAGE: MinIO (S3)
+  # -----------------------------------------------------
+  minio:
+    image: minio/minio:RELEASE.2024-11-07T00-52-20Z
+    container_name: minio-server
+    command: server /data --console-address ":9001"
+    ports:
+      - "${MINIO_SERVER_HOST_PORT}:9000"
+      - "${MINIO_UI_HOST_PORT}:9001"
+    environment:
+      MINIO_ROOT_USER: ${MINIO_ROOT_USER}
+      MINIO_ROOT_PASSWORD: ${MINIO_ROOT_PASSWORD}
+      TZ: ${TIMEZONE}
+    restart: unless-stopped
+    volumes:
+      - ./mnt/data_drive/minio_data:/data
+    networks:
+      - llm-ops-net
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:9000/minio/health/live"]
+      interval: 30s
+      timeout: 20s
+      retries: 3
+
+  # -----------------------------------------------------
+  # 2. RELATIONAL DB: POSTGRES (APP)
+  # -----------------------------------------------------
+  app-postgres-db:
+    image: postgres:16
+    container_name: app-postgres
+    restart: always
+    environment:
+      POSTGRES_USER: ${POSTGRES_APP_USER}
+      POSTGRES_PASSWORD: ${POSTGRES_APP_PASSWORD}
+      POSTGRES_DB: ${POSTGRES_APP_DB}
+      PGDATA: /var/lib/postgresql/data/pgdata
+      TZ: ${TIMEZONE}
+    ports:
+      - "${APP_POSTGRES_HOST_PORT}:5432"
+    volumes:
+      - ./mnt/data_drive/postgres_data:/var/lib/postgresql/data/pgdata
+      - ./docker/storages/postgre/init_hilo_db.sql:/docker-entrypoint-initdb.d/init.sql
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_APP_USER} -d ${POSTGRES_APP_DB}"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    networks:
+      - llm-ops-net
+  
+  # -----------------------------------------------------
+  # 3. VECTOR DB: Milvus & Etcd
+  # -----------------------------------------------------
+  etcd:
+    container_name: milvus-etcd
+    image: quay.io/coreos/etcd:v3.5.12
+    restart: unless-stopped
+    environment:
+      ETCD_AUTO_COMPACTION_MODE: revision
+      ETCD_AUTO_COMPACTION_RETENTION: "1000"
+      ETCD_QUOTA_BACKEND_BYTES: "4294967296"
+      ETCD_SNAPSHOT_COUNT: "50000"
+      ETCDCTL_API: "3"
+      TZ: ${TIMEZONE}
+    volumes:
+      - ./mnt/data_drive/etcd_data:/etcd
+    command: >
+      etcd
+      --name milvus-etcd
+      --data-dir=/etcd
+      --advertise-client-urls=http://etcd:2379
+      --listen-client-urls=http://0.0.0.0:2379
+      --initial-advertise-peer-urls=http://etcd:2380
+      --listen-peer-urls=http://0.0.0.0:2380
+      --initial-cluster=milvus-etcd=http://etcd:2380
+      --log-level=info
+    networks:
+      - llm-ops-net
+    healthcheck:
+      test: ["CMD", "etcdctl", "--endpoints=http://127.0.0.1:2379", "endpoint", "health"]
+      interval: 30s
+      timeout: 20s
+      retries: 3
+
+  milvus:
+    container_name: milvus-standalone
+    image: milvusdb/milvus:v2.6.8
+    command: ["milvus", "run", "standalone"]
+    restart: unless-stopped
+    environment:
+      ETCD_ENDPOINTS: etcd:2379
+      ETCD_ROOT_PATH: milvus
+      MINIO_ADDRESS: minio:9000
+      MINIO_ACCESS_KEY_ID: ${MINIO_ROOT_USER}
+      MINIO_SECRET_ACCESS_KEY: ${MINIO_ROOT_PASSWORD}
+      TZ: ${TIMEZONE}
+    volumes:
+      - ./mnt/data_drive/milvus_data:/var/lib/milvus
+      #- ./docker/storages/milvus/milvus.yaml:/milvus/configs/milvus.yaml
+    ports:
+      - "${MILVUS_GRPC_HOST_PORT}:19530"
+      - "${MILVUS_UI_HOST_PORT}:9091"
+    depends_on:
+      etcd:
+        condition: service_healthy
+      minio:
+        condition: service_healthy
+    deploy:
+      resources:
+        limits:
+          memory: 12G
+        reservations:
+          memory: 8G
+    networks:
+      - llm-ops-net
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:9091/healthz"]
+      interval: 30s
+      timeout: 10s
+      retries: 5
+      start_period: 60s
+
+  # -----------------------------------------------------
+  # 4. GRAPH DB: Neo4j 5.26.19-community
+  # -----------------------------------------------------
+  neo4j:
+    image: neo4j:5.26.19-community
+    container_name: neo4j-server
+    restart: unless-stopped
+    ports:
+      - "${NEO4J_HTTP_HOST_PORT}:7474"
+      - "${NEO4J_BOLT_HOST_PORT}:7687"
+    environment:
+      NEO4J_AUTH: ${NEO4J_AUTH}
+      NEO4J_server_memory_heap_initial__size: 4G
+      NEO4J_server_memory_heap_max__size: 6G
+      NEO4J_server_memory_pagecache_size: 4G
+      NEO4J_server_default__listen__address: 0.0.0.0
+      NEO4J_PLUGINS: '["apoc"]'
+      NEO4J_dbms_security_procedures_unrestricted: apoc.*
+      NEO4J_db_transaction_timeout: 10m
+      NEO4J_dbms_transaction_timeout: 10m
+      TZ: ${TIMEZONE}
+    volumes:
+      - ./mnt/data_drive/neo4j_data/data:/data
+      - ./mnt/data_drive/neo4j_data/logs:/logs
+      - ./mnt/data_drive/neo4j_data/import:/import
+      - ./mnt/data_drive/neo4j_data/plugins:/plugins
+    deploy:
+      resources:
+        limits:
+          memory: 12G
+        reservations:
+          memory: 8G
+    networks:
+      - llm-ops-net
+    healthcheck:
+      test: ["CMD-SHELL", "wget --no-verbose --tries=1 --spider http://localhost:7474 || exit 1"]
+      interval: 30s
+      timeout: 10s
+      retries: 5
+      start_period: 60s
+
+  # -----------------------------------------------------
+  # 5. PROCESSING: Spark
+  # -----------------------------------------------------
+  spark-base:
+    build:
+      context: ./docker/spark
+      dockerfile: dockerfile
+    image: chatbot-spark:3.5.8-python3
+    profiles: ["build-only"]
+
+  spark-master:
+    image: chatbot-spark:3.5.8-python3
+    container_name: spark-master
+    command: /opt/spark/bin/spark-class org.apache.spark.deploy.master.Master
+    restart: unless-stopped
+    ports:
+      - '${SPARK_MASTER_HOST_PORT}:8080'
+      - '${SPARK_UI_HOST_PORT}:7077'
+    environment:
+      SPARK_DEFAULTS_CONF: spark.eventLog.enabled=true spark.eventLog.dir=file:///opt/spark/events
+      PYTHONPATH: /opt/spark/work-dir
+      TZ: ${TIMEZONE}
+    volumes:
+      # - ./docker/spark/jobs:/opt/spark/jobs
+      - ../data-pipeline-repo/spark:/opt/spark/work-dir
+      - ./mnt/data_drive/spark_data/spark_events:/opt/spark/events # mount to host
+    networks:
+      - llm-ops-net
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8080"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 30s
+
+  spark-worker-1:
+    image: chatbot-spark:3.5.8-python3
+    container_name: spark-worker-1
+    command: /opt/spark/bin/spark-class org.apache.spark.deploy.worker.Worker spark://spark-master:7077
+    restart: unless-stopped
+    environment:
+      SPARK_WORKER_CORES: 4
+      SPARK_WORKER_MEMORY: 8G
+      SPARK_DEFAULTS_CONF: spark.eventLog.enabled=true spark.eventLog.dir=file:///opt/spark/events
+      PYTHONPATH: /opt/spark/work-dir
+      TZ: ${TIMEZONE}
+    depends_on:
+      spark-master:
+        condition: service_healthy
+    volumes:
+      - ../data-pipeline-repo/spark:/opt/spark/work-dir
+      - ./mnt/data_drive/spark_data/spark_events:/opt/spark/events
+    networks:
+      - llm-ops-net
+
+  spark-worker-2:
+    image: chatbot-spark:3.5.8-python3
+    container_name: spark-worker-2
+    command: /opt/spark/bin/spark-class org.apache.spark.deploy.worker.Worker spark://spark-master:7077
+    restart: unless-stopped
+    environment:
+      SPARK_WORKER_CORES: 4
+      SPARK_WORKER_MEMORY: 8G
+      SPARK_DEFAULTS_CONF: spark.eventLog.enabled=true spark.eventLog.dir=file:///opt/spark/events
+      PYTHONPATH: /opt/spark/work-dir
+      TZ: ${TIMEZONE}
+    depends_on:
+      spark-master:
+        condition: service_healthy
+    volumes:
+      - ../data-pipeline-repo/spark:/opt/spark/work-dir
+      - ./mnt/data_drive/spark_data/spark_events:/opt/spark/events
+    networks:
+      - llm-ops-net
+
+  # spark history
+  spark-history:
+    image: chatbot-spark:3.5.8-python3
+    container_name: spark-history
+    command: /opt/spark/bin/spark-class org.apache.spark.deploy.history.HistoryServer
+    restart: unless-stopped
+    ports:
+      - "${SPARK_HISTORY_SERVER_HOST_PORT}:18080"
+    environment:
+      SPARK_HISTORY_OPTS: -Dspark.history.fs.logDirectory=file:///opt/spark/events
+      TZ: ${TIMEZONE}
+    depends_on:
+      spark-master:
+        condition: service_healthy
+      # spark-worker-1:
+      #   condition: service_healthy
+      # spark-worker-2:
+      #   condition: service_healthy
+    volumes:
+      - ./mnt/data_drive/spark_data/spark_events:/opt/spark/events
+    networks:
+      - llm-ops-net
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:18080"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      
+  # -----------------------------------------------------
+  # 6. ORCHESTRATOR: Airflow
+  # -----------------------------------------------------
+  airflow-base:
+    build:
+      context: ./docker/airflow
+      dockerfile: dockerfile
+    image: chatbot-airflow:3.1.4-python3.10
+    profiles: ["build-only"]
+
+  airflow-postgres:
+    image: postgres:16
+    container_name: airflow-postgres
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: ${AIRFLOW_POSTGRES_USER}
+      POSTGRES_PASSWORD: ${AIRFLOW_POSTGRES_PASSWORD}
+      POSTGRES_DB: ${AIRFLOW_POSTGRES_DB}
+      TZ: ${TIMEZONE}
+    ports:
+      - "${AIRFLOW_POSTGRE_HOST_PORT}:5432"
+    volumes:
+      - ./mnt/data_drive/airflow_data/airflow_db:/var/lib/postgresql/data
+    networks:
+      - llm-ops-net
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${AIRFLOW_POSTGRES_USER} -d ${AIRFLOW_POSTGRES_DB}"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 10s
+
+  airflow-webserver:
+    image: chatbot-airflow:3.1.4-python3.10
+    container_name: airflow-webserver
+    restart: always
+    depends_on:
+      airflow-postgres:
+        condition: service_healthy
+    environment:
+      <<: *airflow-env
+    ports:
+      - "${AIRFLOW_WEBSERVER_HOST_PORT}:8080"
+    command: api-server
+    volumes:
+      # data pipeline
+      - ../data-pipeline-repo/airflow/airflow_configs:/opt/airflow/airflow_configs
+      - ../data-pipeline-repo/airflow/airflow_dags:/opt/airflow/dags
+      - ../data-pipeline-repo/airflow/airflow_modules:/opt/airflow/airflow_modules
+      - ../data-pipeline-repo/airflow/airflow_jobs:/opt/airflow/airflow_jobs
+      - ../data-pipeline-repo/spark:/opt/spark/work-dir
+      # airflow config 
+      - ./docker/airflow/_config/:/opt/airflow/_config/
+      # logs
+      - ./mnt/data_drive/airflow_data/logs:/opt/airflow/logs
+    networks:
+      - llm-ops-net
+    healthcheck:
+      test: ["CMD-SHELL", "curl -f http://localhost:8080/api/v2/monitor/health || exit 1"]
+      interval: 15s
+      timeout: 10s
+      retries: 5
+      start_period: 20s
+
+  airflow-scheduler:
+    image: chatbot-airflow:3.1.4-python3.10
+    container_name: airflow-scheduler
+    restart: always
+    depends_on:
+      airflow-postgres:
+        condition: service_healthy
+      spark-master:
+        condition: service_healthy
+    environment:
+      <<: *airflow-env
+    command: scheduler
+    volumes:
+      # data pipeline
+      - ../data-pipeline-repo/airflow/airflow_configs:/opt/airflow/airflow_configs
+      - ../data-pipeline-repo/airflow/airflow_dags:/opt/airflow/dags
+      - ../data-pipeline-repo/airflow/airflow_modules:/opt/airflow/airflow_modules
+      - ../data-pipeline-repo/airflow/airflow_jobs:/opt/airflow/airflow_jobs
+      - ../data-pipeline-repo/airflow:/opt/airflow/work-dir
+      - ../data-pipeline-repo/spark:/opt/spark/work-dir
+      # airflow config 
+      - ./docker/airflow/_config/:/opt/airflow/_config/
+      # logs
+      - ./mnt/data_drive/airflow_data/logs:/opt/airflow/logs
+    networks:
+      - llm-ops-net
+    healthcheck:
+      test: ["CMD-SHELL", "airflow jobs check --job-type SchedulerJob --local || exit 1"]
+      interval: 30s
+      timeout: 20s
+      retries: 5
+      start_period: 40s
+
+  airflow-dag-processor:
+    image: chatbot-airflow:3.1.4-python3.10
+    container_name: airflow-dag-processor
+    restart: always
+    depends_on:
+      airflow-postgres:
+        condition: service_healthy
+      spark-master:
+        condition: service_healthy
+    environment:
+      <<: *airflow-env
+    command: dag-processor
+    volumes:
+      # data pipeline
+      - ../data-pipeline-repo/airflow/airflow_configs:/opt/airflow/airflow_configs
+      - ../data-pipeline-repo/airflow/airflow_dags:/opt/airflow/dags
+      - ../data-pipeline-repo/airflow/airflow_modules:/opt/airflow/airflow_modules
+      - ../data-pipeline-repo/airflow/airflow_jobs:/opt/airflow/airflow_jobs
+      - ../data-pipeline-repo/spark:/opt/spark/work-dir
+      # airflow config 
+      - ./docker/airflow/_config/:/opt/airflow/_config/
+      # logs
+      - ./mnt/data_drive/airflow_data/logs:/opt/airflow/logs
+      #- ./docker/spark/jobs:/opt/spark/jobs
+    networks:
+      - llm-ops-net
+    healthcheck:
+      test: ["CMD-SHELL", "airflow jobs check --job-type DagProcessorJob --hostname \"$${HOSTNAME}\" || exit 1"]
+      interval: 15s
+      timeout: 10s
+      retries: 5
+      start_period: 20s
+  
+  # -----------------------------------------------------
+  # 7. Monitoring
+  # -----------------------------------------------------
+  cadvisor:
+    image: gcr.io/cadvisor/cadvisor:v0.55.1
+    container_name: cadvisor
+    restart: unless-stopped
+    privileged: true
+    ports:
+      - "${CADVISOR_HOST_PORT}:8080"
+    volumes:
+      - /:/rootfs:ro
+      - /var/run:/var/run:ro
+      - /sys:/sys:ro
+      - /home/felix/.local/share/docker/:/var/lib/docker:ro
+      - /dev/disk/:/dev/disk:ro
+      - /run/user/1014/docker.sock:/opt/docker-rootless.sock:ro
+      - /run/user/1014/docker/containerd/containerd.sock:/opt/containerd-rootless.sock:ro
+    command:
+      - "-store_container_labels=true"
+      - "-docker=unix:///opt/docker-rootless.sock"
+      - "-containerd=/opt/containerd-rootless.sock"
+    environment:
+      TZ: ${TIMEZONE}
+    devices:
+      - /dev/kmsg
+    networks:
+      - llm-ops-net
+    healthcheck:
+      test: ["CMD", "wget", "--quiet", "--tries=1", "--spider", "http://localhost:8080/healthz"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+
+  alertmanager:
+    image: prom/alertmanager:v0.28.1
+    container_name: alertmanager
+    restart: unless-stopped
+    ports:
+      - "${ALERTMANAGER_HOST_PORT}:9093"
+    volumes:
+      - ./docker/monitoring/alertmanager.yml:/etc/alertmanager/alertmanager.yml
+    command:
+      - '--config.file=/etc/alertmanager/alertmanager.yml'
+    environment:
+      TZ: ${TIMEZONE}
+    networks:
+      - llm-ops-net
+    healthcheck:
+      test: ["CMD", "wget", "--quiet", "--tries=1", "--spider", "http://localhost:9093/-/healthy"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+
+  prometheus:
+    image: prom/prometheus:v3.9.1
+    container_name: prometheus
+    restart: unless-stopped
+    volumes:
+      - ./docker/monitoring/prometheus.yml:/etc/prometheus/prometheus.yml
+      - ./docker/monitoring/alert.rules.yml:/etc/prometheus/alert.rules.yml
+      - ./mnt/data_drive/prometheus_data:/prometheus
+    ports:
+      - "${PROMETHEUS_HOST_PORT}:9090"
+    command:
+      - '--config.file=/etc/prometheus/prometheus.yml'
+    environment:
+      TZ: ${TIMEZONE}
+    networks:
+      - llm-ops-net
+    depends_on:
+      cadvisor:
+        condition: service_healthy
+      alertmanager:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "wget", "--quiet", "--tries=1", "--spider", "http://localhost:9090/-/healthy"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+
+  grafana:
+    image: grafana/grafana:12.3.1
+    container_name: grafana
+    restart: unless-stopped
+    ports:
+      - "${GRAFANA_HOST_PORT}:3000"
+    environment:
+      GF_SECURITY_ADMIN_USER: admin
+      GF_SECURITY_ADMIN_PASSWORD: admin
+      GF_SERVER_DOMAIN: localhost
+      GF_SERVER_ROOT_URL: http://localhost:6052
+      GF_SECURITY_ALLOW_EMBEDDING: "true"
+      GF_RENDERING_SERVER_URL: http://renderer:8081/render
+      GF_RENDERING_CALLBACK_URL: http://grafana:3000/
+      GF_RENDERING_RENDER_TIMEOUT: 60
+      GF_LOG_FILTERS: rendering:debug,rendercontrol:debug
+      GF_LOG_LEVEL: debug
+      TZ: ${TIMEZONE}
+    volumes:
+      - ./mnt/data_drive/grafana_data:/var/lib/grafana
+    networks:
+      - llm-ops-net
+    depends_on:
+      prometheus:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD-SHELL", "wget --no-verbose --tries=1 --spider http://localhost:3000/api/health || exit 1"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 30s
+
+  renderer:
+    image: grafana/grafana-image-renderer:v5.4.0
+    container_name: renderer
+    restart: unless-stopped
+    ports:
+      - "${GRAFANA_IMAGE_RENDERER_HOST_PORT}:8081"
+    environment:
+      ENABLE_METRICS: "true"
+      HTTP_HOST: 0.0.0.0
+      IGNORE_HTTPS_ERRORS: "true"
+      RENDERING_ARGS: --no-sandbox,--disable-setuid-sandbox,--disable-dev-shm-usage
+      RENDERING_MODE: clustered
+      TZ: ${TIMEZONE}
+    healthcheck:
+      test: ["CMD", "/usr/bin/grafana-image-renderer", "-v"] # Basic binary check
+      interval: 30s
+      timeout: 10s
+      retries: 3
+    networks:
+      - llm-ops-net
