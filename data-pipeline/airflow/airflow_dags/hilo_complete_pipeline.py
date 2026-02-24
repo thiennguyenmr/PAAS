@@ -82,7 +82,11 @@ gr_merge = SparkSubmitOperator(
     name='hilo-gr-merge',
     conn_id='spark_default',
     verbose=True,
-    conf=spark_conf,
+    conf={
+        'spark.driver.memory': '2g',
+        'spark.executor.memory': '8g',
+        'spark.executor.cores': '4',
+    },
     dag=dag,
 )
 
@@ -178,7 +182,11 @@ gc_merge = SparkSubmitOperator(
     name='hilo-gc-merge',
     conn_id='spark_default',
     verbose=True,
-    conf=spark_conf,
+    conf={
+        'spark.driver.memory': '2g',
+        'spark.executor.memory': '8g',
+        'spark.executor.cores': '4',
+    },
     dag=dag,
 )
 

@@ -34,6 +34,11 @@ x-airflow-env: &airflow-env
   AIRFLOW__CORE__SIMPLE_AUTH_MANAGER_USERS: ${AIRFLOW__CORE__SIMPLE_AUTH_MANAGER_USERS}
   AIRFLOW__CORE__SIMPLE_AUTH_MANAGER_PASSWORDS_FILE: ${AIRFLOW__CORE__SIMPLE_AUTH_MANAGER_PASSWORDS_FILE}
   TZ: ${TIMEZONE}
+  # Vault Secrets Backend
+  AIRFLOW__SECRETS__BACKEND: ${AIRFLOW__SECRETS__BACKEND:-}
+  AIRFLOW__SECRETS__BACKEND_KWARGS: ${AIRFLOW__SECRETS__BACKEND_KWARGS:-}
+  VAULT_ADDR: ${VAULT_ADDR:-}
+  VAULT_TOKEN: ${VAULT_DEV_ROOT_TOKEN:-}
   # Log S3 configuration
   AIRFLOW__LOGGING__REMOTE_LOGGING: 'False'
   # AIRFLOW__LOGGING__REMOTE_BASE_LOG_FOLDER: 's3://ops-logs/airflow'
@@ -249,8 +254,8 @@ services:
     command: /opt/spark/bin/spark-class org.apache.spark.deploy.worker.Worker spark://spark-master:7077
     restart: unless-stopped
     environment:
-      SPARK_WORKER_CORES: 4
-      SPARK_WORKER_MEMORY: 8G
+      SPARK_WORKER_CORES: 8
+      SPARK_WORKER_MEMORY: 16G
       SPARK_DEFAULTS_CONF: spark.eventLog.enabled=true spark.eventLog.dir=file:///opt/spark/events
       PYTHONPATH: /opt/spark/work-dir
       TZ: ${TIMEZONE}
@@ -269,8 +274,8 @@ services:
     command: /opt/spark/bin/spark-class org.apache.spark.deploy.worker.Worker spark://spark-master:7077
     restart: unless-stopped
     environment:
-      SPARK_WORKER_CORES: 4
-      SPARK_WORKER_MEMORY: 8G
+      SPARK_WORKER_CORES: 8
+      SPARK_WORKER_MEMORY: 16G
       SPARK_DEFAULTS_CONF: spark.eventLog.enabled=true spark.eventLog.dir=file:///opt/spark/events
       PYTHONPATH: /opt/spark/work-dir
       TZ: ${TIMEZONE}
@@ -350,6 +355,8 @@ services:
     depends_on:
       airflow-postgres:
         condition: service_healthy
+      vault:
+        condition: service_healthy
     environment:
       <<: *airflow-env
     ports:
@@ -381,6 +388,8 @@ services:
     restart: always
     depends_on:
       airflow-postgres:
+        condition: service_healthy
+      vault:
         condition: service_healthy
       spark-master:
         condition: service_healthy
@@ -414,6 +423,8 @@ services:
     restart: always
     depends_on:
       airflow-postgres:
+        condition: service_healthy
+      vault:
         condition: service_healthy
       spark-master:
         condition: service_healthy
@@ -529,11 +540,28 @@ services:
     ports:
       - "${GRAFANA_HOST_PORT}:3000"
     environment:
+      # Basic settings
       GF_SECURITY_ADMIN_USER: admin
       GF_SECURITY_ADMIN_PASSWORD: admin
       GF_SERVER_DOMAIN: localhost
       GF_SERVER_ROOT_URL: http://localhost:6052
       GF_SECURITY_ALLOW_EMBEDDING: "true"
+      # Keycloak OIDC Configuration
+      GF_AUTH_GENERIC_OAUTH_ENABLED: "true"
+      GF_AUTH_GENERIC_OAUTH_NAME: "Keycloak"
+      GF_AUTH_GENERIC_OAUTH_ALLOW_SIGN_UP: "true"
+      GF_AUTH_GENERIC_OAUTH_CLIENT_ID: "grafana"
+      GF_AUTH_GENERIC_OAUTH_CLIENT_SECRET: ${KEYCLOAK_GRAFANA_CLIENT_SECRET}
+      GF_AUTH_GENERIC_OAUTH_SCOPES: "openid email profile roles"
+      GF_AUTH_GENERIC_OAUTH_AUTH_URL: http://localhost:${KEYCLOAK_HOST_PORT}/realms/paas/protocol/openid-connect/auth
+      GF_AUTH_GENERIC_OAUTH_TOKEN_URL: http://keycloak:8080/realms/paas/protocol/openid-connect/token
+      GF_AUTH_GENERIC_OAUTH_API_URL: http://keycloak:8080/realms/paas/protocol/openid-connect/userinfo
+      GF_AUTH_GENERIC_OAUTH_ROLE_ATTRIBUTE_PATH: "contains(roles[*], 'admin') && 'Admin' || contains(roles[*], 'data_engineer') && 'Editor' || 'Viewer'"
+      GF_AUTH_GENERIC_OAUTH_EMAIL_ATTRIBUTE_PATH: email
+      GF_AUTH_GENERIC_OAUTH_LOGIN_ATTRIBUTE_PATH: preferred_username
+      GF_AUTH_GENERIC_OAUTH_NAME_ATTRIBUTE_PATH: name
+      GF_AUTH_SIGNOUT_REDIRECT_URL: http://localhost:${KEYCLOAK_HOST_PORT}/realms/paas/protocol/openid-connect/logout?client_id=grafana&post_logout_redirect_uri=http%3A%2F%2Flocalhost%3A6052%2Flogin
+      # Rendering settings
       GF_RENDERING_SERVER_URL: http://renderer:8081/render
       GF_RENDERING_CALLBACK_URL: http://grafana:3000/
       GF_RENDERING_RENDER_TIMEOUT: 60
@@ -547,12 +575,14 @@ services:
     depends_on:
       prometheus:
         condition: service_healthy
+      keycloak:
+        condition: service_healthy
     healthcheck:
       test: ["CMD-SHELL", "wget --no-verbose --tries=1 --spider http://localhost:3000/api/health || exit 1"]
-      interval: 30s
-      timeout: 10s
-      retries: 3
-      start_period: 30s
+      interval: 30s   
+      timeout: 10s    
+      retries: 3         
+      start_period: 30s  
 
   renderer:
     image: grafana/grafana-image-renderer:v5.4.0
@@ -574,3 +604,113 @@ services:
       retries: 3
     networks:
       - llm-ops-net
+
+  # -----------------------------------------------------
+  # 8. SECRET MANAGEMENT: HashiCorp Vault
+  # -----------------------------------------------------
+  vault:
+    image: hashicorp/vault:1.19
+    container_name: vault
+    restart: unless-stopped
+    ports:
+      - "${VAULT_HOST_PORT}:8200"
+    environment:
+      VAULT_ADDR: http://127.0.0.1:8200
+      VAULT_API_ADDR: http://vault:8200
+      VAULT_DEV_ROOT_TOKEN_ID: ${VAULT_DEV_ROOT_TOKEN}
+      VAULT_DEV_LISTEN_ADDRESS: 0.0.0.0:8200
+      # Pass credentials for init script
+      MINIO_ROOT_USER: ${MINIO_ROOT_USER}
+      MINIO_ROOT_PASSWORD: ${MINIO_ROOT_PASSWORD}
+      POSTGRES_APP_USER: ${POSTGRES_APP_USER}
+      POSTGRES_APP_PASSWORD: ${POSTGRES_APP_PASSWORD}
+      POSTGRES_APP_DB: ${POSTGRES_APP_DB}
+      AIRFLOW_POSTGRES_USER: ${AIRFLOW_POSTGRES_USER}
+      AIRFLOW_POSTGRES_PASSWORD: ${AIRFLOW_POSTGRES_PASSWORD}
+      AIRFLOW_POSTGRES_DB: ${AIRFLOW_POSTGRES_DB}
+      NEO4J_PASSWORD: ${NEO4J_PASSWORD}
+      AIRFLOW_ADMIN_USERNAME: ${AIRFLOW_ADMIN_USERNAME}
+      AIRFLOW_ADMIN_PASSWORD: ${AIRFLOW_ADMIN_PASSWORD}
+      AIRFLOW_ADMIN_EMAIL: ${AIRFLOW_ADMIN_EMAIL}
+      AIRFLOW__CORE__FERNET_KEY: ${AIRFLOW__CORE__FERNET_KEY}
+      AIRFLOW__API__SECRET_KEY: ${AIRFLOW__API__SECRET_KEY}
+      BREVO_SMTP_LOGIN: ${BREVO_SMTP_LOGIN}
+      BREVO_SMTP_KEY: ${BREVO_SMTP_KEY}
+      ALERT_EMAIL_FROM: ${ALERT_EMAIL_FROM}
+      ALERT_EMAIL_TO: ${ALERT_EMAIL_TO}
+      TZ: ${TIMEZONE}
+    cap_add:
+      - IPC_LOCK
+    volumes:
+      - ./mnt/data_drive/vault_data:/vault/data
+      - ./docker/vault/policies:/vault/policies
+      - ./docker/vault/scripts:/vault/scripts
+    networks:
+      - llm-ops-net
+    healthcheck:
+      test: ["CMD", "vault", "status"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 10s
+    command: server -dev -dev-root-token-id="${VAULT_DEV_ROOT_TOKEN}"
+
+  # -----------------------------------------------------
+  # 9. IDENTITY MANAGEMENT: Keycloak
+  # -----------------------------------------------------
+  keycloak-postgres:
+    image: postgres:16
+    container_name: keycloak-postgres
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: ${KEYCLOAK_DB_USER}
+      POSTGRES_PASSWORD: ${KEYCLOAK_DB_PASSWORD}
+      POSTGRES_DB: ${KEYCLOAK_DB_NAME}
+      TZ: ${TIMEZONE}
+    volumes:
+      - ./mnt/data_drive/keycloak_data/postgres:/var/lib/postgresql/data
+    networks:
+      - llm-ops-net
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${KEYCLOAK_DB_USER} -d ${KEYCLOAK_DB_NAME}"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  keycloak:
+    image: quay.io/keycloak/keycloak:26.2
+    container_name: keycloak
+    restart: unless-stopped
+    ports:
+      - "${KEYCLOAK_HOST_PORT}:8080"
+    environment:
+      KC_DB: postgres
+      KC_DB_URL: jdbc:postgresql://keycloak-postgres:5432/${KEYCLOAK_DB_NAME}
+      KC_DB_USERNAME: ${KEYCLOAK_DB_USER}
+      KC_DB_PASSWORD: ${KEYCLOAK_DB_PASSWORD}
+      KC_HOSTNAME: ${KEYCLOAK_HOSTNAME}
+      KC_HOSTNAME_PORT: ${KEYCLOAK_HOST_PORT}
+      KC_HOSTNAME_STRICT: "false"
+      KC_HOSTNAME_STRICT_HTTPS: "false"
+      KC_HTTP_ENABLED: "true"
+      KC_HEALTH_ENABLED: "true"
+      KC_METRICS_ENABLED: "true"
+      KEYCLOAK_ADMIN: ${KEYCLOAK_ADMIN_USER}
+      KEYCLOAK_ADMIN_PASSWORD: ${KEYCLOAK_ADMIN_PASSWORD}
+      TZ: ${TIMEZONE}
+    command: start-dev --import-realm
+    depends_on:
+      keycloak-postgres:
+        condition: service_healthy
+      vault:
+        condition: service_healthy
+    volumes:
+      - ./docker/keycloak/import:/opt/keycloak/data/import
+    networks:
+      - llm-ops-net
+    healthcheck:
+      test: ["CMD-SHELL", "exec 3<>/dev/tcp/localhost/8080 && echo -e 'GET /health/ready HTTP/1.1\\r\\nHost: localhost\\r\\n\\r\\n' >&3 && cat <&3 | grep -q '200' || exit 1"]
+      interval: 30s
+      timeout: 10s
+      retries: 5
+      start_period: 60s

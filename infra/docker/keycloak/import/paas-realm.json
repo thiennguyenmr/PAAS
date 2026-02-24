@@ -1,0 +1,276 @@
+{
+  "realm": "paas",
+  "enabled": true,
+  "displayName": "PAAS Platform",
+  "displayNameHtml": "<strong>PAAS Platform</strong>",
+  "sslRequired": "external",
+  "registrationAllowed": false,
+  "loginWithEmailAllowed": true,
+  "duplicateEmailsAllowed": false,
+  "resetPasswordAllowed": true,
+  "editUsernameAllowed": false,
+  "bruteForceProtected": true,
+  "permanentLockout": false,
+  "maxFailureWaitSeconds": 900,
+  "minimumQuickLoginWaitSeconds": 60,
+  "waitIncrementSeconds": 60,
+  "quickLoginCheckMilliSeconds": 1000,
+  "maxDeltaTimeSeconds": 43200,
+  "failureFactor": 5,
+  "accessTokenLifespan": 3600,
+  "accessTokenLifespanForImplicitFlow": 900,
+  "ssoSessionIdleTimeout": 1800,
+  "ssoSessionMaxLifespan": 36000,
+  "offlineSessionIdleTimeout": 2592000,
+  "roles": {
+    "realm": [
+      {
+        "name": "admin",
+        "description": "Platform Administrator - Full access to all services",
+        "composite": false
+      },
+      {
+        "name": "data_engineer",
+        "description": "Data Engineer - Access to pipelines and data tools",
+        "composite": false
+      },
+      {
+        "name": "viewer",
+        "description": "Viewer - Read-only access to dashboards and logs",
+        "composite": false
+      }
+    ]
+  },
+  "groups": [
+    {
+      "name": "admins",
+      "path": "/admins",
+      "realmRoles": ["admin"]
+    },
+    {
+      "name": "engineers",
+      "path": "/engineers",
+      "realmRoles": ["data_engineer"]
+    },
+    {
+      "name": "viewers",
+      "path": "/viewers",
+      "realmRoles": ["viewer"]
+    }
+  ],
+  "clients": [
+    {
+      "clientId": "airflow",
+      "name": "Apache Airflow",
+      "description": "Airflow Workflow Orchestration Platform",
+      "enabled": true,
+      "clientAuthenticatorType": "client-secret",
+      "secret": "airflow-client-secret-change-in-prod",
+      "redirectUris": [
+        "http://localhost:6031/*",
+        "http://airflow-webserver:8080/*"
+      ],
+      "webOrigins": [
+        "http://localhost:6031",
+        "http://airflow-webserver:8080"
+      ],
+      "standardFlowEnabled": true,
+      "implicitFlowEnabled": false,
+      "directAccessGrantsEnabled": true,
+      "serviceAccountsEnabled": false,
+      "publicClient": false,
+      "frontchannelLogout": true,
+      "protocol": "openid-connect",
+      "attributes": {
+        "access.token.lifespan": "3600",
+        "saml.assertion.signature": "false",
+        "saml.multivalued.roles": "false",
+        "saml.force.post.binding": "false",
+        "saml.encrypt": "false",
+        "post.logout.redirect.uris": "http://localhost:6031/*",
+        "oauth2.device.authorization.grant.enabled": "false",
+        "backchannel.logout.revoke.offline.tokens": "false",
+        "saml.server.signature": "false",
+        "saml.server.signature.keyinfo.ext": "false",
+        "exclude.session.state.from.auth.response": "false",
+        "backchannel.logout.session.required": "true",
+        "client_credentials.use_refresh_token": "false",
+        "saml_force_name_id_format": "false",
+        "saml.client.signature": "false",
+        "tls.client.certificate.bound.access.tokens": "false",
+        "require.pushed.authorization.requests": "false",
+        "saml.authnstatement": "false",
+        "display.on.consent.screen": "false",
+        "saml.onetimeuse.condition": "false"
+      },
+      "protocolMappers": [
+        {
+          "name": "realm-roles",
+          "protocol": "openid-connect",
+          "protocolMapper": "oidc-usermodel-realm-role-mapper",
+          "consentRequired": false,
+          "config": {
+            "multivalued": "true",
+            "claim.name": "roles",
+            "jsonType.label": "String",
+            "id.token.claim": "true",
+            "access.token.claim": "true",
+            "userinfo.token.claim": "true"
+          }
+        },
+        {
+          "name": "groups",
+          "protocol": "openid-connect",
+          "protocolMapper": "oidc-group-membership-mapper",
+          "consentRequired": false,
+          "config": {
+            "full.path": "false",
+            "claim.name": "groups",
+            "id.token.claim": "true",
+            "access.token.claim": "true",
+            "userinfo.token.claim": "true"
+          }
+        },
+        {
+          "name": "email",
+          "protocol": "openid-connect",
+          "protocolMapper": "oidc-usermodel-property-mapper",
+          "consentRequired": false,
+          "config": {
+            "userinfo.token.claim": "true",
+            "user.attribute": "email",
+            "id.token.claim": "true",
+            "access.token.claim": "true",
+            "claim.name": "email",
+            "jsonType.label": "String"
+          }
+        }
+      ]
+    },
+    {
+      "clientId": "grafana",
+      "name": "Grafana Monitoring",
+      "description": "Grafana Monitoring and Visualization Platform",
+      "enabled": true,
+      "clientAuthenticatorType": "client-secret",
+      "secret": "grafana-client-secret-change-in-prod",
+      "redirectUris": [
+        "http://localhost:6052/*",
+        "http://grafana:3000/*"
+      ],
+      "webOrigins": [
+        "http://localhost:6052",
+        "http://grafana:3000"
+      ],
+      "standardFlowEnabled": true,
+      "implicitFlowEnabled": false,
+      "directAccessGrantsEnabled": false,
+      "serviceAccountsEnabled": false,
+      "publicClient": false,
+      "frontchannelLogout": true,
+      "protocol": "openid-connect",
+      "attributes": {
+        "access.token.lifespan": "3600",
+        "post.logout.redirect.uris": "http://localhost:6052/*",
+        "backchannel.logout.session.required": "true"
+      },
+      "protocolMappers": [
+        {
+          "name": "realm-roles",
+          "protocol": "openid-connect",
+          "protocolMapper": "oidc-usermodel-realm-role-mapper",
+          "consentRequired": false,
+          "config": {
+            "multivalued": "true",
+            "claim.name": "roles",
+            "jsonType.label": "String",
+            "id.token.claim": "true",
+            "access.token.claim": "true",
+            "userinfo.token.claim": "true"
+          }
+        },
+        {
+          "name": "groups",
+          "protocol": "openid-connect",
+          "protocolMapper": "oidc-group-membership-mapper",
+          "consentRequired": false,
+          "config": {
+            "full.path": "false",
+            "claim.name": "groups",
+            "id.token.claim": "true",
+            "access.token.claim": "true",
+            "userinfo.token.claim": "true"
+          }
+        }
+      ]
+    }
+  ],
+  "users": [
+    {
+      "username": "admin",
+      "enabled": true,
+      "emailVerified": true,
+      "email": "admin@paas.local",
+      "firstName": "Platform",
+      "lastName": "Admin",
+      "credentials": [
+        {
+          "type": "password",
+          "value": "admin123",
+          "temporary": true
+        }
+      ],
+      "realmRoles": ["admin"],
+      "groups": ["/admins"]
+    },
+    {
+      "username": "engineer",
+      "enabled": true,
+      "emailVerified": true,
+      "email": "engineer@paas.local",
+      "firstName": "Data",
+      "lastName": "Engineer",
+      "credentials": [
+        {
+          "type": "password",
+          "value": "engineer123",
+          "temporary": true
+        }
+      ],
+      "realmRoles": ["data_engineer"],
+      "groups": ["/engineers"]
+    },
+    {
+      "username": "viewer",
+      "enabled": true,
+      "emailVerified": true,
+      "email": "viewer@paas.local",
+      "firstName": "Dashboard",
+      "lastName": "Viewer",
+      "credentials": [
+        {
+          "type": "password",
+          "value": "viewer123",
+          "temporary": true
+        }
+      ],
+      "realmRoles": ["viewer"],
+      "groups": ["/viewers"]
+    }
+  ],
+  "scopeMappings": [],
+  "clientScopeMappings": {},
+  "defaultDefaultClientScopes": [
+    "role_list",
+    "profile",
+    "email",
+    "roles",
+    "web-origins"
+  ],
+  "defaultOptionalClientScopes": [
+    "offline_access",
+    "address",
+    "phone",
+    "microprofile-jwt"
+  ]
+}

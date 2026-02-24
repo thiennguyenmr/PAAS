@@ -1,7 +1,4 @@
 # Spark connection configuration
-# Copy this file to app_config.yaml:
-#   cp app_config.yaml.example app_config.yaml
-
 postgres:
   maven_package: "org.postgresql:postgresql:42.6.0"
   driver_class: "org.postgresql.Driver"

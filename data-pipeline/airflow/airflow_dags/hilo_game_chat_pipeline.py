@@ -74,8 +74,8 @@ merge_data = SparkSubmitOperator(
     verbose=True,
     conf={
         'spark.driver.memory': '2g',
-        'spark.executor.memory': '6g',
-        'spark.executor.cores': '8',
+        'spark.executor.memory': '8g',
+        'spark.executor.cores': '4',
     },
     dag=dag,
 )

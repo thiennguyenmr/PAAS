@@ -73,9 +73,9 @@ merge_data = SparkSubmitOperator(
     conn_id='spark_default',
     verbose=True,
     conf={
-        'spark.driver.memory': '2g',
-        'spark.executor.memory': '4g',
-        'spark.executor.cores': '2',
+        'spark.driver.memory': '4g',
+        'spark.executor.memory': '8g',
+        'spark.executor.cores': '4',
     },
     dag=dag,
 )
@@ -87,11 +87,7 @@ quality_check = SparkSubmitOperator(
     name='hilo-gameround-quality-check',
     conn_id='spark_default',
     verbose=True,
-    conf={
-        'spark.driver.memory': '2g',
-        'spark.executor.memory': '2g',
-        'spark.executor.cores': '1',
-    },
+    conf=spark_conf,
     dag=dag,
 )
 
@@ -124,11 +120,7 @@ vectorize_data = SparkSubmitOperator(
     name='hilo-gameround-vectorize',
     conn_id='spark_default',
     verbose=True,
-    conf={
-        'spark.driver.memory': '2g',
-        'spark.executor.memory': '4g',
-        'spark.executor.cores': '2',
-    },
+    conf=spark_conf,
     dag=dag,
 )
 

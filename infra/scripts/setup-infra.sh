@@ -14,18 +14,19 @@ echo "  2. Clean all data directories"
 echo "  3. Set correct permissions for each service"
 echo "  4. Build base images (Spark, Airflow)"
 echo "  5. Start all services in the correct order"
+echo "  6. Initialize Vault secrets and Keycloak realm"
 echo ""
 echo "WARNING: This will delete ALL existing data!"
 echo ""
-read -p "Continue? (y/n) " -n 1 -r
-echo
-if [[ ! $REPLY =~ ^[Yy]$ ]]; then
+printf "Continue? (y/n) "
+read REPLY
+if [ "$REPLY" != "y" ] && [ "$REPLY" != "Y" ]; then
     echo "Setup cancelled."
     exit 1
 fi
 
 # Change to infra-repo directory
-SCRIPT_DIR="$( cd "$( dirname "${BASH_SOURCE[0]}" )" && pwd )"
+SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
 cd "$SCRIPT_DIR/.."
 
 echo ""
@@ -64,6 +65,12 @@ docker run --rm -v $(pwd)/mnt/data_drive/milvus_data:/data alpine sh -c "rm -rf 
 echo ">> Cleaning Etcd directory..."
 docker run --rm -v $(pwd)/mnt/data_drive/etcd_data:/data alpine sh -c "rm -rf /data/* && mkdir -p /data"
 
+echo ">> Cleaning Vault directory..."
+docker run --rm -v $(pwd)/mnt/data_drive/vault_data:/data alpine sh -c "rm -rf /data/* && mkdir -p /data"
+
+echo ">> Cleaning Keycloak PostgreSQL directory..."
+docker run --rm -v $(pwd)/mnt/data_drive/keycloak_data:/data alpine sh -c "rm -rf /data/* && mkdir -p /data/postgres"
+
 echo ""
 echo "==================================================================="
 echo "Step 3: Building base images"
@@ -90,7 +97,7 @@ echo ">> Stage 1: Starting storage services..."
 echo "   - MinIO (S3)"
 echo "   - App PostgreSQL"
 echo "   - Etcd (for Milvus)"
-docker compose up -d minio app-postgres-db etcd
+docker compose up -d minio app-postgres-db
 
 echo ">> Waiting for storage services to be healthy (30s)..."
 sleep 30
@@ -105,7 +112,31 @@ docker compose up -d milvus neo4j
 echo ">> Waiting for databases to initialize (30s)..."
 sleep 30
 
-# Stage 3: Spark cluster
+# Stage 3: Security services (Vault & Keycloak)
+echo ""
+echo ">> Stage 3: Starting security services..."
+echo "   - HashiCorp Vault (secrets management)"
+docker compose up -d vault
+
+echo ">> Waiting for Vault to be healthy (15s)..."
+sleep 15
+
+echo ">> Initializing Vault secrets..."
+docker compose exec -T vault sh /vault/scripts/init-secrets.sh || echo "Vault secrets initialization skipped or failed"
+
+echo "   - Keycloak PostgreSQL"
+docker compose up -d keycloak-postgres
+
+echo ">> Waiting for Keycloak DB to be healthy (10s)..."
+sleep 10
+
+echo "   - Keycloak (identity management)"
+docker compose up -d keycloak
+
+echo ">> Waiting for Keycloak to initialize (30s)..."
+sleep 30
+
+# Stage 4: Spark cluster
 echo ""
 echo ">> Stage 3: Starting Spark cluster..."
 echo "   - Spark Master"
@@ -123,9 +154,9 @@ docker compose up -d spark-history
 echo ">> Waiting for Spark cluster to stabilize (10s)..."
 sleep 10
 
-# Stage 4: Airflow
+# Stage 5: Airflow
 echo ""
-echo ">> Stage 4: Starting Airflow..."
+echo ">> Stage 5: Starting Airflow..."
 echo "   - Airflow PostgreSQL"
 docker compose up -d airflow-postgres
 
@@ -138,9 +169,9 @@ docker compose up -d airflow-webserver airflow-scheduler airflow-dag-processor
 echo ">> Waiting for Airflow to initialize (20s)..."
 sleep 20
 
-# Stage 5: Monitoring
+# Stage 6: Monitoring
 echo ""
-echo ">> Stage 5: Starting monitoring services..."
+echo ">> Stage 6: Starting monitoring services..."
 echo "   - cAdvisor"
 docker compose up -d cadvisor
 
@@ -184,17 +215,21 @@ echo "  Airflow PostgreSQL: localhost:6030"
 echo "  Neo4j Browser:     http://localhost:6007"
 echo "  Milvus:            localhost:6005"
 echo ""
+echo "Security:"
+echo "  Vault:             http://localhost:6060  (Token: see .env VAULT_DEV_ROOT_TOKEN)"
+echo "  Keycloak:          http://localhost:6061  (admin/admin)"
+echo ""
 echo "Processing:"
 echo "  Spark Master:      http://localhost:6020"
 echo "  Spark History:     http://localhost:6022"
 echo ""
 echo "Orchestration:"
-echo "  Airflow:           http://localhost:6031"
+echo "  Airflow:           http://localhost:6031  (admin/admin123)"
 echo ""
 echo "Monitoring:"
 echo "  cAdvisor:          http://localhost:6050"
 echo "  Prometheus:        http://localhost:6051"
-echo "  Grafana:           http://localhost:6052"
+echo "  Grafana:           http://localhost:6052  (SSO via Keycloak)"
 echo ""
 echo "==================================================================="
 echo ""
@@ -203,6 +238,11 @@ echo "  - View all services:        docker compose ps"
 echo "  - View logs:                docker compose logs -f <service>"
 echo "  - Restart service:          docker compose restart <service>"
 echo "  - Stop all:                 docker compose down"
+echo ""
+echo "Vault commands:"
+echo "  - List secrets:             docker compose exec vault vault kv list secret/airflow/connections"
+echo "  - Get secret:               docker compose exec vault vault kv get secret/system/minio"
+echo "  - Re-init secrets:          docker compose exec vault sh /vault/scripts/init-secrets.sh"
 echo ""
 echo "For troubleshooting, see: TROUBLESHOOTING.md"
 echo ""

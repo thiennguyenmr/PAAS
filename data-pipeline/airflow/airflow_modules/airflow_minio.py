@@ -1,5 +1,7 @@
 import sys
 import os
+import io
+import json
 from minio import Minio
 from minio.commonconfig import CopySource
 from airflow_modules.airflow_reader import read_yaml
@@ -172,33 +174,87 @@ class AirflowMinioStorage:
         """Copy objects from one bucket to another."""
         try:
             print(f">>> Copying from bucket '{source_bucket}' (prefix: '{source_prefix}') to '{target_bucket}' (prefix: '{target_prefix}')...")
-            
+
             objects = self.client.list_objects(source_bucket, prefix=source_prefix, recursive=True)
-            
+
             count = 0
             for obj in objects:
                 if obj.is_dir:
                     continue
-                
+
                 # Construct target name
                 # If source_prefix is "data/", and obj is "data/file.txt"
                 # relative path is "file.txt"
                 relative_path = os.path.relpath(obj.object_name, source_prefix) if source_prefix else obj.object_name
-                
+
                 # If target_prefix is "sample_data", target path is "sample_data/file.txt"
                 target_object_name = os.path.join(target_prefix, relative_path).replace("\\", "/") # Ensure forward slashes
-                
+
                 print(f"    -> Copying: {obj.object_name} -> {target_object_name}")
-                
+
                 self.client.copy_object(
                     target_bucket,
                     target_object_name,
                     CopySource(source_bucket, obj.object_name)
                 )
                 count += 1
-            
+
             print(f">>> Success! {count} objects copied.")
             return True
         except Exception as e:
             print(f"!!! Error copying between buckets: {e}")
             return False
+
+    def ensure_bucket(self, bucket=None):
+        """Create bucket if it doesn't exist."""
+        try:
+            target_bucket = bucket if bucket else self.storage_conn["bucket"]
+            if not self.client.bucket_exists(target_bucket):
+                self.client.make_bucket(target_bucket)
+                print(f">>> Bucket '{target_bucket}' created")
+            else:
+                print(f">>> Bucket '{target_bucket}' already exists")
+            return target_bucket
+        except Exception as e:
+            print(f"!!! Error ensuring bucket: {e}")
+            return None
+
+    def upload_json(self, object_name, data, bucket=None):
+        """Upload JSON data to MinIO."""
+        try:
+            target_bucket = bucket if bucket else self.storage_conn["bucket"]
+            json_bytes = json.dumps(data, indent=2, default=str).encode('utf-8')
+            data_stream = io.BytesIO(json_bytes)
+
+            self.client.put_object(
+                bucket_name=target_bucket,
+                object_name=object_name,
+                data=data_stream,
+                length=len(json_bytes),
+                content_type="application/json",
+            )
+            print(f">>> Uploaded JSON: s3://{target_bucket}/{object_name}")
+            return object_name
+        except Exception as e:
+            print(f"!!! Error uploading JSON: {e}")
+            return None
+
+    def upload_csv(self, object_name, csv_content, bucket=None):
+        """Upload CSV data to MinIO."""
+        try:
+            target_bucket = bucket if bucket else self.storage_conn["bucket"]
+            csv_bytes = csv_content.encode('utf-8')
+            data_stream = io.BytesIO(csv_bytes)
+
+            self.client.put_object(
+                bucket_name=target_bucket,
+                object_name=object_name,
+                data=data_stream,
+                length=len(csv_bytes),
+                content_type="text/csv",
+            )
+            print(f">>> Uploaded CSV: s3://{target_bucket}/{object_name}")
+            return object_name
+        except Exception as e:
+            print(f"!!! Error uploading CSV: {e}")
+            return None

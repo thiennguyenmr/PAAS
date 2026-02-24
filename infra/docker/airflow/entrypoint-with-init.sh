@@ -17,6 +17,27 @@ set -e
 
 PASSWORD_FILE="${AIRFLOW__CORE__SIMPLE_AUTH_MANAGER_PASSWORDS_FILE}"
 
+# Wait for Vault if configured
+if [ -n "${VAULT_ADDR}" ]; then
+  echo "Waiting for Vault at ${VAULT_ADDR}..."
+  VAULT_HOST=$(echo "${VAULT_ADDR}" | sed -E 's|https?://([^:/]+).*|\1|')
+  VAULT_PORT=$(echo "${VAULT_ADDR}" | sed -E 's|.*:([0-9]+).*|\1|')
+  VAULT_PORT=${VAULT_PORT:-8200}
+
+  until nc -z "${VAULT_HOST}" "${VAULT_PORT}" 2>/dev/null; do
+    echo "  Vault not ready, waiting..."
+    sleep 2
+  done
+  echo "Vault is reachable."
+
+  # Wait for Vault API to be ready
+  until curl -sf "${VAULT_ADDR}/v1/sys/health" > /dev/null 2>&1; do
+    echo "  Vault API not ready, waiting..."
+    sleep 2
+  done
+  echo "Vault API is ready."
+fi
+
 # Only initialize when running webserver or api-server
 if [ "$1" = "webserver" ] || [ "$1" = "api-server" ]; then
 

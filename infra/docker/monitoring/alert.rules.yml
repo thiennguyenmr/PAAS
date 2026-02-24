@@ -1,15 +1,15 @@
 groups:
-  - name: test_alerts
-    rules:
-      # TEST ALERT - Remove after testing! This will fire immediately
-      - alert: TestAlert
-        expr: up{job="prometheus"} == 1
-        for: 10s
-        labels:
-          severity: warning
-        annotations:
-          summary: "TEST ALERT - Email notification test"
-          description: "This is a test alert to verify email notifications are working. You can remove this rule after confirming."
+  # - name: test_alerts
+  #   rules:
+  #     # TEST ALERT - Remove after testing! This will fire immediately
+  #     - alert: TestAlert
+  #       expr: up{job="prometheus"} == 1
+  #       for: 10s
+  #       labels:
+  #         severity: warning
+  #       annotations:
+  #         summary: "TEST ALERT - Email notification test"
+  #         description: "This is a test alert to verify email notifications are working. You can remove this rule after confirming."
 
   - name: container_alerts
     rules:

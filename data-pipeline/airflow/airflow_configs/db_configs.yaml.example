@@ -1,19 +1,15 @@
-# Database connection configurations
-# Copy this file to db_configs.yaml and fill in your values:
-#   cp db_configs.yaml.example db_configs.yaml
-
 # main postgres
 main_postgres:
   app_name: "main_postgres"
   jdbc_url: "jdbc:postgresql://localhost:5432/db"
   db_properties:
-    user: "postgres"
-    password: "change_me"
+    user: "your_postgres_user"
+    password: "your_postgres_password"
 
-# server postgres
+# demo postgres
 server_postgres:
   app_name: "server_postgres"
-  jdbc_url: "jdbc:postgresql://app-postgres:5432/app_data"
+  jdbc_url: "jdbc:postgresql://your_host:your_port/your_database"
   db_properties:
-    user: "app_admin"
-    password: "change_me"
+    user: "your_app_user"
+    password: "your_app_password"
