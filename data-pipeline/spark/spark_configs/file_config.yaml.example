@@ -1,0 +1,14 @@
+csv_path: "data.csv"
+encoding: "utf-8"
+delimiter: ","
+header: true
+quote_char: "\""
+escape_char: "\\"
+skip_rows: 0
+columns:
+  - name: "id"
+    type: "int"
+  - name: "name"
+    type: "string"
+  - name: "created_at"
+    type: "datetime"

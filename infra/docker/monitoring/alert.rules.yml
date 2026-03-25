@@ -1,0 +1,86 @@
+groups:
+  # - name: test_alerts
+  #   rules:
+  #     # TEST ALERT - Remove after testing! This will fire immediately
+  #     - alert: TestAlert
+  #       expr: up{job="prometheus"} == 1
+  #       for: 10s
+  #       labels:
+  #         severity: warning
+  #       annotations:
+  #         summary: "TEST ALERT - Email notification test"
+  #         description: "This is a test alert to verify email notifications are working. You can remove this rule after confirming."
+
+  - name: container_alerts
+    rules:
+      - alert: ContainerDown
+        expr: time() - container_last_seen{name!=""} > 120
+        for: 2m
+        labels:
+          severity: critical
+        annotations:
+          summary: "Container {{ $labels.name }} is down"
+          description: "Container {{ $labels.name }} has not been seen for more than 2 minutes."
+
+      - alert: ContainerHighCPU
+        expr: sum(rate(container_cpu_usage_seconds_total{name!=""}[5m])) by (name) * 100 > 80
+        for: 5m
+        labels:
+          severity: warning
+        annotations:
+          summary: "Container {{ $labels.name }} high CPU usage"
+          description: "Container {{ $labels.name }} CPU usage is above 80% (current: {{ $value | printf \"%.1f\" }}%)."
+
+      - alert: ContainerHighMemory
+        expr: |
+          container_memory_usage_bytes{name!=""}
+            / on(name) (container_spec_memory_limit_bytes{name!=""} != 0) * 100 > 80
+        for: 5m
+        labels:
+          severity: warning
+        annotations:
+          summary: "Container {{ $labels.name }} high memory usage"
+          description: "Container {{ $labels.name }} memory usage is above 80% of its limit (current: {{ $value | printf \"%.1f\" }}%)."
+
+      - alert: ContainerRestarting
+        expr: increase(container_restart_count{name!=""}[15m]) > 3
+        for: 5m
+        labels:
+          severity: warning
+        annotations:
+          summary: "Container {{ $labels.name }} is restarting frequently"
+          description: "Container {{ $labels.name }} has restarted more than 3 times in the last 15 minutes."
+
+  - name: infrastructure_alerts
+    rules:
+      - alert: HostHighCPU
+        expr: |
+          100 - (avg by (instance)
+            (rate(node_cpu_seconds_total{mode="idle"}[5m])) * 100) > 85
+        for: 5m
+        labels:
+          severity: warning
+        annotations:
+          summary: "Host high CPU usage on {{ $labels.instance }}"
+          description: "Host CPU usage is above 85% (current: {{ $value | printf \"%.1f\" }}%)."
+
+      - alert: HostHighMemory
+        expr: |
+          (1 - node_memory_MemAvailable_bytes / node_memory_MemTotal_bytes) * 100 > 85
+        for: 5m
+        labels:
+          severity: warning
+        annotations:
+          summary: "Host high memory usage on {{ $labels.instance }}"
+          description: "Host memory usage is above 85% (current: {{ $value | printf \"%.1f\" }}%)."
+
+      - alert: HostDiskSpaceLow
+        expr: |
+          (1 - node_filesystem_avail_bytes{fstype!~"tmpfs|overlay"}
+            / node_filesystem_size_bytes{fstype!~"tmpfs|overlay"}) * 100 > 85
+        for: 5m
+        labels:
+          severity: warning
+        annotations:
+          summary: "Host disk space low on {{ $labels.instance }}"
+          description: "Disk usage on {{ $labels.mountpoint }} is above 85% (current: {{ $value | printf \"%.1f\" }}%)."

@@ -1,0 +1,142 @@
+# ==============================================================================
+# 1. BASE IMAGE & ENVIRONMENT VARIABLES
+# ==============================================================================
+FROM apache/airflow:3.1.7-python3.10
+
+# Airflow Env
+ENV AIRFLOW_HOME=/opt/airflow
+ENV PRO_ENV_PATH=/opt/airflow
+ENV pro_env_path=/opt/airflow
+
+# Spark & Hadoop Env
+ENV SPARK_VERSION=3.5.8
+ENV HADOOP_PROFILE=hadoop3
+ENV HADOOP_AWS_VERSION=3.3.4
+ENV AWS_SDK_VERSION=1.12.262
+
+# Paths
+ENV SPARK_HOME_DIR=/opt/spark-${SPARK_VERSION}-bin-${HADOOP_PROFILE}
+ENV SPARK_HOME=/opt/spark
+ENV PYTHONPATH="${AIRFLOW_HOME}/modules:${AIRFLOW_HOME}/scripts:${AIRFLOW_HOME}/spark/modules:${AIRFLOW_HOME}/spark/jobs"
+ENV VENV_PATH="${AIRFLOW_HOME}/venv"
+ENV PATH="${VENV_PATH}/bin:${SPARK_HOME}/bin:${SPARK_HOME}/sbin:${PATH}"
+
+USER root
+
+# ==============================================================================
+# 2. SYSTEM DEPENDENCIES (Java & Build Tools)
+# ==============================================================================
+# Install Java 17 (Required for Spark 4.x), build essentials, and libraries
+RUN apt-get update && apt-get install -y --no-install-recommends \
+    openjdk-17-jdk \
+    curl \
+    procps \
+    build-essential \
+    gcc \
+    g++ \
+    make \
+    wget \
+    gnupg \
+    ca-certificates \
+    libpq-dev \
+    unixodbc \
+    unixodbc-dev \
+    libaio1 \
+    libglib2.0-0 \
+    libsm6 \
+    libxrender1 \
+    libxext6 \
+    libssl-dev \
+    libxml2 \
+    libxslt1.1 \
+    libnss3 \
+    libatk1.0-0 \
+    libatk-bridge2.0-0 \
+    libcups2 \
+    libxcomposite1 \
+    libxdamage1 \
+    libxfixes3 \
+    libxrandr2 \
+    libasound2 \
+    libpango-1.0-0 \
+    libpangocairo-1.0-0 \
+ && apt-get clean \
+ && rm -rf /var/lib/apt/lists/*
+
+# ==============================================================================
+# 3. SPARK INSTALLATION & AWS JARS
+# ==============================================================================
+# Download and Unpack Spark
+RUN curl -L https://archive.apache.org/dist/spark/spark-${SPARK_VERSION}/spark-${SPARK_VERSION}-bin-${HADOOP_PROFILE}.tgz \
+    | tar -xz -C /opt/
+
+# Create Symlink: /opt/spark -> /opt/spark-4.1.1...
+RUN ln -s ${SPARK_HOME_DIR} ${SPARK_HOME}
+
+# Download AWS/S3A JARs into Spark
+RUN curl -L https://repo1.maven.org/maven2/org/apache/hadoop/hadoop-aws/${HADOOP_AWS_VERSION}/hadoop-aws-${HADOOP_AWS_VERSION}.jar \
+    -o ${SPARK_HOME}/jars/hadoop-aws-${HADOOP_AWS_VERSION}.jar \
+ && curl -L https://repo1.maven.org/maven2/com/amazonaws/aws-java-sdk-bundle/${AWS_SDK_VERSION}/aws-java-sdk-bundle-${AWS_SDK_VERSION}.jar \
+    -o ${SPARK_HOME}/jars/aws-java-sdk-bundle-${AWS_SDK_VERSION}.jar
+
+# Postgres JDBC (Required for client deploy mode in Airflow)
+RUN curl -L https://jdbc.postgresql.org/download/postgresql-42.7.2.jar \
+    -o ${SPARK_HOME}/jars/postgresql-42.7.2.jar
+
+# Neo4j Connector for Spark (Spark 3.5 uses Scala 2.12 by default in official images usually, checking tag...)
+# Official images often stick to Scala 2.12 for Spark 3.x.
+# Using 5.4.0_for_spark_3 (Scala 2.12)
+RUN curl -L https://repo1.maven.org/maven2/org/neo4j/neo4j-connector-apache-spark_2.12/5.4.0_for_spark_3/neo4j-connector-apache-spark_2.12-5.4.0_for_spark_3.jar \
+    -o ${SPARK_HOME}/jars/neo4j-connector-apache-spark_2.12-5.4.0_for_spark_3.jar
+
+# ==============================================================================
+# 4. PYTHON ENVIRONMENT (VENV)
+# ==============================================================================
+# Create Virtual Environment
+RUN python -m venv --system-site-packages "${VENV_PATH}" \
+    && "${VENV_PATH}/bin/python" -m ensurepip --upgrade \
+    && "${VENV_PATH}/bin/pip" install --upgrade pip setuptools wheel
+
+# Install Dependencies 
+COPY _config/requirements.txt /requirements.txt
+RUN "${VENV_PATH}/bin/pip" install --no-cache-dir -r /requirements.txt
+
+# ==============================================================================
+# 5. CONFIGURATION & SCRIPTS
+# ==============================================================================
+# Spark Config
+COPY _config/spark-defaults.conf ${SPARK_HOME}/conf/spark-defaults.conf
+
+# Airflow Connections Script
+COPY _config/init_connections.sh /opt/airflow/connections/init_connections.sh
+RUN chmod +x /opt/airflow/connections/init_connections.sh
+
+# Spark Submit Wrapper Script
+COPY _config/spark_submit_wrapper.sh ${SPARK_HOME}/spark_submit_wrapper.sh
+RUN chmod +x ${SPARK_HOME}/spark_submit_wrapper.sh
+
+# Entrypoint
+COPY entrypoint-with-init.sh /entrypoint-with-init.sh
+RUN chmod +x /entrypoint-with-init.sh
+
+# ==============================================================================
+# 6. SOURCE CODE & PERMISSIONS
+# ==============================================================================
+# Copy configs last (because it changes most often)
+# COPY dags/ ${AIRFLOW_HOME}/dags
+# COPY _module/ ${AIRFLOW_HOME}/_module
+# COPY scripts/ ${AIRFLOW_HOME}/scripts
+COPY _config/ ${AIRFLOW_HOME}/_config
+
+# Set ownership to airflow user
+RUN chown -R airflow:root ${AIRFLOW_HOME} \
+    && chown -R airflow:root ${SPARK_HOME_DIR} \
+    && chown -R airflow:root ${SPARK_HOME}
+
+# ==============================================================================
+# 7. FINALIZE
+# ==============================================================================
+USER airflow
+
+ENTRYPOINT ["/entrypoint-with-init.sh"]
+CMD ["webserver"]

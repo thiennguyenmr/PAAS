@@ -1,0 +1,15 @@
+# main postgres
+main_postgres:
+  app_name: "main_postgres"
+  jdbc_url: "jdbc:postgresql://localhost:5432/db"
+  db_properties:
+    user: "your_postgres_user"
+    password: "your_postgres_password"
+
+# demo postgres
+server_postgres:
+  app_name: "server_postgres"
+  jdbc_url: "jdbc:postgresql://your_host:your_port/your_database"
+  db_properties:
+    user: "your_app_user"
+    password: "your_app_password"

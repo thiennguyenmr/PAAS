@@ -1,0 +1,83 @@
+# Milvus Configuration for Large Data Ingestion
+# Optimized for handling big datasets with improved memory management
+
+# etcd settings
+etcd:
+  endpoints:
+    - etcd:2379
+  rootPath: milvus
+
+# Storage settings
+minio:
+  address: minio
+  port: 9000
+  useSSL: false
+  bucketName: milvus-bucket
+  rootPath: file
+
+# Log settings
+log:
+  level: info
+  file:
+    maxSize: 300
+    maxAge: 10
+    maxBackups: 20
+
+# Query node configuration
+queryNode:
+  # Memory settings for query operations
+  stats:
+    publishInterval: 1000
+  scheduler:
+    receiveChanSize: 10240
+    unsolvedQueueSize: 10240
+  cache:
+    enabled: true
+    memoryLimit: 4294967296  # 4GB cache
+
+# Index node configuration
+indexNode:
+  scheduler:
+    buildParallel: 2  # Increase parallel builds with more memory
+
+# Root coordinator configuration
+rootCoord:
+  dmlChannelNum: 16
+  maxPartitionNum: 4096
+
+# Data coordinator configuration
+dataCoord:
+  segment:
+    # Increased segment size for better performance with more memory
+    maxSize: 1024  # MB
+    sealProportion: 0.25
+  enableCompaction: true
+  enableGarbageCollection: true
+
+# Query coordinator configuration
+queryCoord:
+  autoHandoff: true
+  autoBalance: true
+  overloadedMemoryThresholdPercentage: 90
+  balanceIntervalSeconds: 60
+  memoryUsageMaxDifferencePercentage: 30
+
+# Common configuration
+common:
+  # Increase retention for better performance with large writes
+  retentionDuration: 432000  # 5 days in seconds
+
+  # Graceful stop timeout
+  gracefulTime: 5000
+
+  # Storage settings
+  storageType: minio
+
+# Proxy configuration - keep simple to avoid port conflicts
+proxy:
+  maxTaskNum: 2048
+  grpc:
+    serverMaxRecvSize: 536870912  # 512MB max message size
+    serverMaxSendSize: 536870912  # 512MB max message size
+    clientMaxRecvSize: 536870912
+    clientMaxSendSize: 536870912

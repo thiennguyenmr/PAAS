@@ -1,0 +1,35 @@
+# Brevo SMTP (https://app.brevo.com/settings/keys/smtp)
+global:
+  smtp_smarthost: 'smtp-relay.brevo.com:587'
+  smtp_from: 'felix@malarions.com'
+  smtp_auth_username: 'a1869c001@smtp-brevo.com'
+  smtp_auth_password: 'Rs046wb3HSz2dAYK'
+  smtp_require_tls: true
+
+route:
+  receiver: email-notifications
+  group_by: ['alertname', 'severity']
+  group_wait: 10s
+  group_interval: 1m
+  repeat_interval: 1m
+
+  routes:
+    - receiver: email-critical
+      match:
+        severity: critical
+      repeat_interval: 1h
+
+receivers:
+  - name: email-notifications
+    email_configs:
+      - to: 'ngocthien.mr@gmail.com'
+        send_resolved: true
+        headers:
+          subject: '[WARNING] Prometheus Alert: {{ .GroupLabels.alertname }}'
+
+  - name: email-critical
+    email_configs:
+      - to: 'ngocthien.mr@gmail.com'
+        send_resolved: true
+        headers:
+          subject: '[CRITICAL] Prometheus Alert: {{ .GroupLabels.alertname }}'

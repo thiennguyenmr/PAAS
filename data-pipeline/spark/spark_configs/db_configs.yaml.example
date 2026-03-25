@@ -1,0 +1,26 @@
+# main postgres
+main_postgres:
+  app_name: "main_postgres"
+  jdbc_url: "jdbc:postgresql://localhost:5432/mydb"
+  db_properties:
+    user: "your_postgres_user"
+    password: "your_postgres_password"
+
+# demo postgres
+server_postgres:
+  app_name: "server_postgres"
+  jdbc_url: "jdbc:postgresql://localhost:5432/db"
+  db_properties:
+    user: "your_postgres_user"
+    password: "your_postgres_password"
+
+# Milvus Config
+milvus:
+  host: "milvus"
+  port: "19530"
+
+# Neo4j Config
+neo4j:
+  url: "bolt://neo4j:7687"
+  user: "neo4j"
+  password: "your_neo4j_password"
