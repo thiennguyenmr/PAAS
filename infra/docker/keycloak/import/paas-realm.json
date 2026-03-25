@@ -25,37 +25,137 @@
   "roles": {
     "realm": [
       {
-        "name": "admin",
-        "description": "Platform Administrator - Full access to all services",
-        "composite": false
-      },
-      {
-        "name": "data_engineer",
-        "description": "Data Engineer - Access to pipelines and data tools",
-        "composite": false
-      },
-      {
-        "name": "viewer",
-        "description": "Viewer - Read-only access to dashboards and logs",
+        "name": "platform_admin",
+        "description": "Platform Administrator - Can manage Keycloak and platform settings",
         "composite": false
       }
-    ]
+    ],
+    "client": {
+      "airflow": [
+        {
+          "name": "Admin",
+          "description": "Airflow Admin - Full access to DAGs, connections, and admin features"
+        },
+        {
+          "name": "Op",
+          "description": "Airflow Operator - Can trigger DAGs and view logs"
+        },
+        {
+          "name": "User",
+          "description": "Airflow User - Can view DAGs and their status"
+        },
+        {
+          "name": "Viewer",
+          "description": "Airflow Viewer - Read-only access to DAGs"
+        },
+        {
+          "name": "Public",
+          "description": "Airflow Public - Minimal access"
+        }
+      ],
+      "grafana": [
+        {
+          "name": "Admin",
+          "description": "Grafana Admin - Full access including user management"
+        },
+        {
+          "name": "Editor",
+          "description": "Grafana Editor - Can create and edit dashboards"
+        },
+        {
+          "name": "Viewer",
+          "description": "Grafana Viewer - Read-only access to dashboards"
+        }
+      ],
+      "minio": [
+        {
+          "name": "consoleAdmin",
+          "description": "MinIO Console Admin - Full admin access including user management"
+        },
+        {
+          "name": "readwrite",
+          "description": "MinIO ReadWrite - Read and write objects in all buckets"
+        },
+        {
+          "name": "readonly",
+          "description": "MinIO ReadOnly - Read objects only in all buckets"
+        }
+      ],
+      "spark": [
+        {
+          "name": "admin",
+          "description": "Spark Admin - Submit and manage all jobs"
+        },
+        {
+          "name": "user",
+          "description": "Spark User - Submit and view own jobs"
+        },
+        {
+          "name": "viewer",
+          "description": "Spark Viewer - View job status only"
+        }
+      ],
+      "mlflow": [
+        {
+          "name": "admin",
+          "description": "MLflow Admin - Full access to experiments, models, and settings"
+        },
+        {
+          "name": "editor",
+          "description": "MLflow Editor - Create and edit experiments, register models"
+        },
+        {
+          "name": "viewer",
+          "description": "MLflow Viewer - Read-only access to experiments and models"
+        }
+      ]
+    }
   },
   "groups": [
     {
-      "name": "admins",
-      "path": "/admins",
-      "realmRoles": ["admin"]
+      "name": "platform-admins",
+      "path": "/platform-admins",
+      "realmRoles": ["platform_admin"],
+      "clientRoles": {
+        "airflow": ["Admin"],
+        "grafana": ["Admin"],
+        "minio": ["consoleAdmin"],
+        "spark": ["admin"],
+        "mlflow": ["admin"]
+      }
     },
     {
-      "name": "engineers",
-      "path": "/engineers",
-      "realmRoles": ["data_engineer"]
+      "name": "data-engineers",
+      "path": "/data-engineers",
+      "clientRoles": {
+        "airflow": ["Op"],
+        "grafana": ["Editor"],
+        "minio": ["readwrite"],
+        "spark": ["user"],
+        "mlflow": ["editor"]
+      }
+    },
+    {
+      "name": "analysts",
+      "path": "/analysts",
+      "clientRoles": {
+        "airflow": ["Viewer"],
+        "grafana": ["Editor"],
+        "minio": ["readonly"],
+        "spark": ["viewer"],
+        "mlflow": ["viewer"]
+      }
     },
     {
       "name": "viewers",
       "path": "/viewers",
-      "realmRoles": ["viewer"]
+      "clientRoles": {
+        "airflow": ["Viewer"],
+        "grafana": ["Viewer"],
+        "minio": ["readonly"],
+        "spark": ["viewer"],
+        "mlflow": ["viewer"]
+      }
     }
   ],
   "clients": [
@@ -65,57 +165,44 @@
       "description": "Airflow Workflow Orchestration Platform",
       "enabled": true,
       "clientAuthenticatorType": "client-secret",
-      "secret": "airflow-client-secret-change-in-prod",
+      "secret": "172cf2884d5d443a4a415551a2200bb0",
       "redirectUris": [
         "http://localhost:6031/*",
-        "http://airflow-webserver:8080/*"
+        "http://airflow-webserver:8080/*",
+        "http://10.30.0.11:6031/*"
       ],
       "webOrigins": [
         "http://localhost:6031",
-        "http://airflow-webserver:8080"
+        "http://airflow-webserver:8080",
+        "http://10.30.0.11:6031"
       ],
       "standardFlowEnabled": true,
       "implicitFlowEnabled": false,
       "directAccessGrantsEnabled": true,
-      "serviceAccountsEnabled": false,
+      "serviceAccountsEnabled": true,
+      "authorizationServicesEnabled": true,
       "publicClient": false,
       "frontchannelLogout": true,
       "protocol": "openid-connect",
       "attributes": {
         "access.token.lifespan": "3600",
-        "saml.assertion.signature": "false",
-        "saml.multivalued.roles": "false",
-        "saml.force.post.binding": "false",
-        "saml.encrypt": "false",
         "post.logout.redirect.uris": "http://localhost:6031/*",
-        "oauth2.device.authorization.grant.enabled": "false",
-        "backchannel.logout.revoke.offline.tokens": "false",
-        "saml.server.signature": "false",
-        "saml.server.signature.keyinfo.ext": "false",
-        "exclude.session.state.from.auth.response": "false",
-        "backchannel.logout.session.required": "true",
-        "client_credentials.use_refresh_token": "false",
-        "saml_force_name_id_format": "false",
-        "saml.client.signature": "false",
-        "tls.client.certificate.bound.access.tokens": "false",
-        "require.pushed.authorization.requests": "false",
-        "saml.authnstatement": "false",
-        "display.on.consent.screen": "false",
-        "saml.onetimeuse.condition": "false"
+        "backchannel.logout.session.required": "true"
       },
       "protocolMappers": [
         {
-          "name": "realm-roles",
+          "name": "airflow-client-roles",
           "protocol": "openid-connect",
-          "protocolMapper": "oidc-usermodel-realm-role-mapper",
+          "protocolMapper": "oidc-usermodel-client-role-mapper",
           "consentRequired": false,
           "config": {
             "multivalued": "true",
-            "claim.name": "roles",
+            "claim.name": "airflow_roles",
             "jsonType.label": "String",
             "id.token.claim": "true",
             "access.token.claim": "true",
-            "userinfo.token.claim": "true"
+            "userinfo.token.claim": "true",
+            "usermodel.clientRoleMapping.clientId": "airflow"
           }
         },
         {
@@ -144,8 +231,243 @@
             "claim.name": "email",
             "jsonType.label": "String"
           }
+        },
+        {
+          "name": "username",
+          "protocol": "openid-connect",
+          "protocolMapper": "oidc-usermodel-property-mapper",
+          "consentRequired": false,
+          "config": {
+            "userinfo.token.claim": "true",
+            "user.attribute": "username",
+            "id.token.claim": "true",
+            "access.token.claim": "true",
+            "claim.name": "preferred_username",
+            "jsonType.label": "String"
+          }
         }
-      ]
+      ],
+      "authorizationSettings": {
+        "allowRemoteResourceManagement": true,
+        "policyEnforcementMode": "ENFORCING",
+        "decisionStrategy": "AFFIRMATIVE",
+        "scopes": [
+          { "name": "GET" },
+          { "name": "POST" },
+          { "name": "PUT" },
+          { "name": "DELETE" },
+          { "name": "LIST" },
+          { "name": "MENU" }
+        ],
+        "resources": [
+          {
+            "name": "Default Resource",
+            "type": "urn:airflow:resources:default",
+            "ownerManagedAccess": false,
+            "uris": ["/*"]
+          },
+          {
+            "name": "Dag",
+            "ownerManagedAccess": false,
+            "scopes": [{ "name": "GET" }, { "name": "POST" }, { "name": "PUT" }, { "name": "DELETE" }, { "name": "LIST" }]
+          },
+          {
+            "name": "Dags",
+            "ownerManagedAccess": false,
+            "scopes": [{ "name": "MENU" }]
+          },
+          {
+            "name": "Pool",
+            "ownerManagedAccess": false,
+            "scopes": [{ "name": "GET" }, { "name": "POST" }, { "name": "PUT" }, { "name": "DELETE" }, { "name": "LIST" }]
+          },
+          {
+            "name": "Pools",
+            "ownerManagedAccess": false,
+            "scopes": [{ "name": "MENU" }]
+          },
+          {
+            "name": "Connection",
+            "ownerManagedAccess": false,
+            "scopes": [{ "name": "GET" }, { "name": "POST" }, { "name": "PUT" }, { "name": "DELETE" }, { "name": "LIST" }]
+          },
+          {
+            "name": "Connections",
+            "ownerManagedAccess": false,
+            "scopes": [{ "name": "MENU" }]
+          },
+          {
+            "name": "Variable",
+            "ownerManagedAccess": false,
+            "scopes": [{ "name": "GET" }, { "name": "POST" }, { "name": "PUT" }, { "name": "DELETE" }, { "name": "LIST" }]
+          },
+          {
+            "name": "Variables",
+            "ownerManagedAccess": false,
+            "scopes": [{ "name": "MENU" }]
+          },
+          {
+            "name": "Configuration",
+            "ownerManagedAccess": false,
+            "scopes": [{ "name": "GET" }, { "name": "POST" }, { "name": "PUT" }, { "name": "DELETE" }, { "name": "LIST" }]
+          },
+          {
+            "name": "Config",
+            "ownerManagedAccess": false,
+            "scopes": [{ "name": "MENU" }]
+          },
+          {
+            "name": "Backfill",
+            "ownerManagedAccess": false,
+            "scopes": [{ "name": "GET" }, { "name": "POST" }, { "name": "PUT" }, { "name": "DELETE" }, { "name": "LIST" }]
+          },
+          {
+            "name": "Asset",
+            "ownerManagedAccess": false,
+            "scopes": [{ "name": "GET" }, { "name": "POST" }, { "name": "PUT" }, { "name": "DELETE" }, { "name": "LIST" }]
+          },
+          {
+            "name": "AssetAlias",
+            "ownerManagedAccess": false,
+            "scopes": [{ "name": "GET" }, { "name": "POST" }, { "name": "PUT" }, { "name": "DELETE" }, { "name": "LIST" }]
+          },
+          {
+            "name": "Assets",
+            "ownerManagedAccess": false,
+            "scopes": [{ "name": "MENU" }]
+          },
+          {
+            "name": "View",
+            "ownerManagedAccess": false,
+            "scopes": [{ "name": "GET" }, { "name": "POST" }, { "name": "PUT" }, { "name": "DELETE" }, { "name": "LIST" }]
+          },
+          {
+            "name": "Menu",
+            "ownerManagedAccess": false,
+            "scopes": [{ "name": "GET" }, { "name": "POST" }, { "name": "PUT" }, { "name": "DELETE" }, { "name": "LIST" }]
+          },
+          {
+            "name": "Custom",
+            "ownerManagedAccess": false,
+            "scopes": [{ "name": "GET" }, { "name": "POST" }, { "name": "PUT" }, { "name": "DELETE" }, { "name": "LIST" }]
+          },
+          {
+            "name": "Audit Log",
+            "ownerManagedAccess": false,
+            "scopes": [{ "name": "MENU" }]
+          },
+          {
+            "name": "Docs",
+            "ownerManagedAccess": false,
+            "scopes": [{ "name": "MENU" }]
+          },
+          {
+            "name": "Plugins",
+            "ownerManagedAccess": false,
+            "scopes": [{ "name": "MENU" }]
+          },
+          {
+            "name": "Providers",
+            "ownerManagedAccess": false,
+            "scopes": [{ "name": "MENU" }]
+          },
+          {
+            "name": "XComs",
+            "ownerManagedAccess": false,
+            "scopes": [{ "name": "MENU" }]
+          },
+          {
+            "name": "Required Actions",
+            "ownerManagedAccess": false,
+            "scopes": [{ "name": "MENU" }]
+          }
+        ],
+        "policies": [
+          {
+            "name": "Admin Role Policy",
+            "description": "Policy for users with Admin client role - full access",
+            "type": "role",
+            "logic": "POSITIVE",
+            "decisionStrategy": "UNANIMOUS",
+            "config": {
+              "roles": "[{\"id\":\"airflow/Admin\",\"required\":true}]"
+            }
+          },
+          {
+            "name": "Op Role Policy",
+            "description": "Policy for users with Op client role - operator access",
+            "type": "role",
+            "logic": "POSITIVE",
+            "decisionStrategy": "UNANIMOUS",
+            "config": {
+              "roles": "[{\"id\":\"airflow/Op\",\"required\":true}]"
+            }
+          },
+          {
+            "name": "User Role Policy",
+            "description": "Policy for users with User client role - basic user access",
+            "type": "role",
+            "logic": "POSITIVE",
+            "decisionStrategy": "UNANIMOUS",
+            "config": {
+              "roles": "[{\"id\":\"airflow/User\",\"required\":true}]"
+            }
+          },
+          {
+            "name": "Viewer Role Policy",
+            "description": "Policy for users with Viewer client role - read-only access",
+            "type": "role",
+            "logic": "POSITIVE",
+            "decisionStrategy": "UNANIMOUS",
+            "config": {
+              "roles": "[{\"id\":\"airflow/Viewer\",\"required\":true}]"
+            }
+          },
+          {
+            "name": "Default Policy",
+            "description": "A policy that grants access only for users within this realm",
+            "type": "aggregate",
+            "logic": "POSITIVE",
+            "decisionStrategy": "AFFIRMATIVE",
+            "config": {
+              "applyPolicies": "[]"
+            }
+          },
+          {
+            "name": "Admin Permission",
+            "description": "Full access permission for Admin role",
+            "type": "scope",
+            "logic": "POSITIVE",
+            "decisionStrategy": "AFFIRMATIVE",
+            "config": {
+              "scopes": "[\"GET\",\"POST\",\"PUT\",\"DELETE\",\"LIST\",\"MENU\"]",
+              "applyPolicies": "[\"Admin Role Policy\"]"
+            }
+          },
+          {
+            "name": "ReadOnly Permission",
+            "description": "Read-only permission for Viewer role",
+            "type": "scope",
+            "logic": "POSITIVE",
+            "decisionStrategy": "AFFIRMATIVE",
+            "config": {
+              "scopes": "[\"GET\",\"LIST\",\"MENU\"]",
+              "applyPolicies": "[\"Viewer Role Policy\"]"
+            }
+          },
+          {
+            "name": "Default Permission",
+            "description": "A permission that applies to the default resource type",
+            "type": "resource",
+            "logic": "POSITIVE",
+            "decisionStrategy": "AFFIRMATIVE",
+            "config": {
+              "defaultResourceType": "urn:airflow:resources:default",
+              "applyPolicies": "[\"Admin Role Policy\"]"
+            }
+          }
+        ]
+      }
     },
     {
       "clientId": "grafana",
@@ -153,7 +475,7 @@
       "description": "Grafana Monitoring and Visualization Platform",
       "enabled": true,
       "clientAuthenticatorType": "client-secret",
-      "secret": "grafana-client-secret-change-in-prod",
+      "secret": "90938735f823afdf6d98e8cdb37c8391",
       "redirectUris": [
         "http://localhost:6052/*",
         "http://grafana:3000/*"
@@ -176,17 +498,18 @@
       },
       "protocolMappers": [
         {
-          "name": "realm-roles",
+          "name": "grafana-client-roles",
           "protocol": "openid-connect",
-          "protocolMapper": "oidc-usermodel-realm-role-mapper",
+          "protocolMapper": "oidc-usermodel-client-role-mapper",
           "consentRequired": false,
           "config": {
             "multivalued": "true",
-            "claim.name": "roles",
+            "claim.name": "grafana_roles",
             "jsonType.label": "String",
             "id.token.claim": "true",
             "access.token.claim": "true",
-            "userinfo.token.claim": "true"
+            "userinfo.token.claim": "true",
+            "usermodel.clientRoleMapping.clientId": "grafana"
           }
         },
         {
@@ -200,6 +523,148 @@
             "id.token.claim": "true",
             "access.token.claim": "true",
             "userinfo.token.claim": "true"
+          }
+        }
+      ]
+    },
+    {
+      "clientId": "minio",
+      "name": "MinIO Object Storage",
+      "description": "MinIO S3-compatible Object Storage",
+      "enabled": true,
+      "clientAuthenticatorType": "client-secret",
+      "secret": "daec19abb69a390300a63ec08861a69c",
+      "redirectUris": [
+        "http://localhost:6001/*",
+        "http://minio:9001/*"
+      ],
+      "webOrigins": [
+        "http://localhost:6001",
+        "http://minio:9001"
+      ],
+      "standardFlowEnabled": true,
+      "implicitFlowEnabled": false,
+      "directAccessGrantsEnabled": true,
+      "serviceAccountsEnabled": false,
+      "publicClient": false,
+      "frontchannelLogout": true,
+      "protocol": "openid-connect",
+      "attributes": {
+        "access.token.lifespan": "3600",
+        "post.logout.redirect.uris": "http://localhost:6001/*",
+        "backchannel.logout.session.required": "true"
+      },
+      "protocolMappers": [
+        {
+          "name": "minio-policy-claim",
+          "protocol": "openid-connect",
+          "protocolMapper": "oidc-usermodel-client-role-mapper",
+          "consentRequired": false,
+          "config": {
+            "multivalued": "true",
+            "claim.name": "policy",
+            "jsonType.label": "String",
+            "id.token.claim": "true",
+            "access.token.claim": "true",
+            "userinfo.token.claim": "true",
+            "usermodel.clientRoleMapping.clientId": "minio"
+          }
+        }
+      ]
+    },
+    {
+      "clientId": "spark",
+      "name": "Apache Spark",
+      "description": "Apache Spark Cluster (via OAuth2-proxy)",
+      "enabled": true,
+      "clientAuthenticatorType": "client-secret",
+      "secret": "8b459f84e3014a6dc404cf912392bc4d",
+      "redirectUris": [
+        "http://localhost:6020/*",
+        "http://localhost:6025/*",
+        "http://localhost:6026/*",
+        "http://spark-master:8080/*",
+        "http://spark-oauth2-proxy:4180/*",
+        "http://spark-history-oauth2-proxy:4180/*"
+      ],
+      "webOrigins": [
+        "http://localhost:6020",
+        "http://localhost:6025",
+        "http://localhost:6026",
+        "http://spark-master:8080"
+      ],
+      "standardFlowEnabled": true,
+      "implicitFlowEnabled": false,
+      "directAccessGrantsEnabled": true,
+      "serviceAccountsEnabled": false,
+      "publicClient": false,
+      "frontchannelLogout": true,
+      "protocol": "openid-connect",
+      "attributes": {
+        "access.token.lifespan": "3600",
+        "post.logout.redirect.uris": "http://localhost:6020/*"
+      },
+      "protocolMappers": [
+        {
+          "name": "spark-client-roles",
+          "protocol": "openid-connect",
+          "protocolMapper": "oidc-usermodel-client-role-mapper",
+          "consentRequired": false,
+          "config": {
+            "multivalued": "true",
+            "claim.name": "spark_roles",
+            "jsonType.label": "String",
+            "id.token.claim": "true",
+            "access.token.claim": "true",
+            "userinfo.token.claim": "true",
+            "usermodel.clientRoleMapping.clientId": "spark"
+          }
+        }
+      ]
+    },
+    {
+      "clientId": "mlflow",
+      "name": "MLflow Tracking",
+      "description": "MLflow ML Experiment Tracking Platform (via OAuth2-proxy)",
+      "enabled": true,
+      "clientAuthenticatorType": "client-secret",
+      "secret": "a3f7b2c9d1e84f6a9b0c5d7e2f1a3b4c",
+      "redirectUris": [
+        "http://localhost:6035/*",
+        "http://localhost:6036/*",
+        "http://mlflow-server:5000/*",
+        "http://mlflow-oauth2-proxy:4180/*"
+      ],
+      "webOrigins": [
+        "http://localhost:6035",
+        "http://localhost:6036",
+        "http://mlflow-server:5000"
+      ],
+      "standardFlowEnabled": true,
+      "implicitFlowEnabled": false,
+      "directAccessGrantsEnabled": true,
+      "serviceAccountsEnabled": false,
+      "publicClient": false,
+      "frontchannelLogout": true,
+      "protocol": "openid-connect",
+      "attributes": {
+        "access.token.lifespan": "3600",
+        "post.logout.redirect.uris": "http://localhost:6036/*"
+      },
+      "protocolMappers": [
+        {
+          "name": "mlflow-client-roles",
+          "protocol": "openid-connect",
+          "protocolMapper": "oidc-usermodel-client-role-mapper",
+          "consentRequired": false,
+          "config": {
+            "multivalued": "true",
+            "claim.name": "mlflow_roles",
+            "jsonType.label": "String",
+            "id.token.claim": "true",
+            "access.token.claim": "true",
+            "userinfo.token.claim": "true",
+            "usermodel.clientRoleMapping.clientId": "mlflow"
           }
         }
       ]
@@ -220,8 +685,15 @@
           "temporary": true
         }
       ],
-      "realmRoles": ["admin"],
-      "groups": ["/admins"]
+      "realmRoles": ["platform_admin"],
+      "groups": ["/platform-admins"],
+      "clientRoles": {
+        "airflow": ["Admin"],
+        "grafana": ["Admin"],
+        "minio": ["consoleAdmin"],
+        "spark": ["admin"],
+        "mlflow": ["admin"]
+      }
     },
     {
       "username": "engineer",
@@ -237,8 +709,37 @@
           "temporary": true
         }
       ],
-      "realmRoles": ["data_engineer"],
-      "groups": ["/engineers"]
+      "groups": ["/data-engineers"],
+      "clientRoles": {
+        "airflow": ["Op"],
+        "grafana": ["Editor"],
+        "minio": ["readwrite"],
+        "spark": ["user"],
+        "mlflow": ["editor"]
+      }
+    },
+    {
+      "username": "analyst",
+      "enabled": true,
+      "emailVerified": true,
+      "email": "analyst@paas.local",
+      "firstName": "Data",
+      "lastName": "Analyst",
+      "credentials": [
+        {
+          "type": "password",
+          "value": "analyst123",
+          "temporary": true
+        }
+      ],
+      "groups": ["/analysts"],
+      "clientRoles": {
+        "airflow": ["Viewer"],
+        "grafana": ["Editor"],
+        "minio": ["readonly"],
+        "spark": ["viewer"],
+        "mlflow": ["viewer"]
+      }
     },
     {
       "username": "viewer",
@@ -254,8 +755,36 @@
           "temporary": true
         }
       ],
-      "realmRoles": ["viewer"],
-      "groups": ["/viewers"]
+      "groups": ["/viewers"],
+      "clientRoles": {
+        "airflow": ["Viewer"],
+        "grafana": ["Viewer"],
+        "minio": ["readonly"],
+        "spark": ["viewer"],
+        "mlflow": ["viewer"]
+      }
+    },
+    {
+      "username": "mixed_user",
+      "enabled": true,
+      "emailVerified": true,
+      "email": "mixed@paas.local",
+      "firstName": "Mixed",
+      "lastName": "Permissions",
+      "credentials": [
+        {
+          "type": "password",
+          "value": "mixed123",
+          "temporary": true
+        }
+      ],
+      "clientRoles": {
+        "airflow": ["Admin"],
+        "grafana": ["Viewer"],
+        "minio": ["readonly"],
+        "spark": ["viewer"],
+        "mlflow": ["viewer"]
+      }
     }
   ],
   "scopeMappings": [],

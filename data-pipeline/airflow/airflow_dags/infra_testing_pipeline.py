@@ -14,7 +14,7 @@ SPARK_BASE_DIR = "/opt/spark/work-dir"
 SPARK_JOBS_DIR = f"{SPARK_BASE_DIR}/spark_jobs/test_pipeline"
 
 with DAG(
-    dag_id='infra_testing_pipeline',
+    dag_id='test_infra_pipeline',
     default_args=default_args,
     #schedule='@daily',
     catchup=False,

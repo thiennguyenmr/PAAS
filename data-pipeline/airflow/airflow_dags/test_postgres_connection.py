@@ -30,7 +30,7 @@ COMMON_ENV_VARS = {
 SPARK_JOBS_DIR = "/opt/airflow/spark/jobs/test_pipeline"
 
 with DAG(
-    dag_id='postgres_connection_testing',
+    dag_id='test_postgres_connection',
     default_args=default_args,
     #schedule='@daily',
     catchup=False,

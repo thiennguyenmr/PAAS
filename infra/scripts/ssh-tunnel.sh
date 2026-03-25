@@ -24,9 +24,15 @@ TUNNELS=(
     "6022:6022:Spark History:spark:http"
     "6030:6030:Airflow Postgres:postgres:postgresql"
     "6031:6031:Airflow:airflow:http"
+    # ML Tracking
+    "6035:6035:MLflow:mlflow:http"
+    "6036:6036:MLflow SSO:mlflow:http"
     # Monitoring
     "6051:6051:Prometheus:prometheus:http"
     "6052:6052:Grafana:grafana:http"
+    # Security
+    "6060:6060:Vault:vault:http"
+    "6061:6061:Keycloak:keycloak:http"
 )
 
 # --- Check sshpass (only if password is set) ---

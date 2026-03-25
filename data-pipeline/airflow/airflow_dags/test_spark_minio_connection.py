@@ -6,7 +6,7 @@ from airflow.providers.standard.operators.bash import BashOperator
 
 
 with DAG(
-    dag_id="spark_minio_connection_testing",
+    dag_id="test_spark_minio_connection",
     start_date=datetime(2026, 1, 12),
     schedule=None,
     catchup=False,

@@ -1,11 +1,14 @@
-#!/bin/bash
+#!/bin/sh
 # Vault Secrets Initialization Script
 # This script stores all system and Airflow connection credentials in Vault
 
 set -e
 
 export VAULT_ADDR="http://127.0.0.1:8200"
-export VAULT_TOKEN="${VAULT_DEV_ROOT_TOKEN:-root-token}"
+# Use existing VAULT_TOKEN if set (production mode), otherwise use dev token
+if [ -z "$VAULT_TOKEN" ]; then
+  export VAULT_TOKEN="${VAULT_DEV_ROOT_TOKEN_ID:-root-token-change-in-prod}"
+fi
 
 echo "=== Vault Secrets Initialization ==="
 echo "Waiting for Vault to be ready..."
@@ -125,6 +128,27 @@ vault kv put secret/airflow/connections/spark_default \
   conn_type="spark" \
   host="spark://spark-master" \
   port="7077"
+
+# ==========================================
+# MLFLOW
+# ==========================================
+echo ""
+echo "=== Storing MLflow Credentials ==="
+
+echo "  -> MLflow PostgreSQL credentials"
+vault kv put secret/system/mlflow_postgres \
+  user="${MLFLOW_POSTGRES_USER:-mlflow}" \
+  password="${MLFLOW_POSTGRES_PASSWORD:-mlflow}" \
+  host="mlflow-postgres" \
+  port="5432" \
+  database="${MLFLOW_POSTGRES_DB:-mlflow}"
+
+echo "  -> mlflow_tracking (Airflow connection)"
+vault kv put secret/airflow/connections/mlflow_tracking \
+  conn_type="http" \
+  host="mlflow-server" \
+  port="5000" \
+  extra='{"endpoint": "api"}'
 
 # ==========================================
 # API KEYS

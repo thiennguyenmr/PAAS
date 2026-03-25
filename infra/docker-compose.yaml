@@ -1,4 +1,11 @@
 # ==========================================
+# COMMON LABELS
+# ==========================================
+x-common-labels: &common-labels
+  com.project: "${PROJECT_NAME}"
+  com.team: "ml-ops"
+
+# ==========================================
 # NETWORKS
 # ==========================================
 networks:
@@ -25,15 +32,34 @@ x-airflow-env: &airflow-env
   AIRFLOW_ADMIN_EMAIL: ${AIRFLOW_ADMIN_EMAIL}
   AIRFLOW__CORE__EXECUTION_API_SERVER_URL: ${AIRFLOW__CORE__EXECUTION_API_SERVER_URL}
   AIRFLOW__WEBSERVER__BASE_URL: ${AIRFLOW__WEBSERVER__BASE_URL}
+  AIRFLOW__API__BASE_URL: ${AIRFLOW__WEBSERVER__BASE_URL}
   PYTHONPATH: /opt/spark/work-dir:/opt/airflow
   AIRFLOW__API_AUTH__JWT_SECRET: ${AIRFLOW__API_AUTH__JWT_SECRET}
   AIRFLOW__API_AUTH__JWT_ISSUER: ${AIRFLOW__API_AUTH__JWT_ISSUER}
   AIRFLOW__API_AUTH__JWT_EXPIRATION_TIME_SECONDS: ${AIRFLOW__API_AUTH__JWT_EXPIRATION_TIME_SECONDS}
   AIRFLOW__API__SECRET_KEY: ${AIRFLOW__API__SECRET_KEY}
   AIRFLOW__WEBSERVER__SECRET_KEY: ${AIRFLOW__WEBSERVER__SECRET_KEY}
-  AIRFLOW__CORE__SIMPLE_AUTH_MANAGER_USERS: ${AIRFLOW__CORE__SIMPLE_AUTH_MANAGER_USERS}
-  AIRFLOW__CORE__SIMPLE_AUTH_MANAGER_PASSWORDS_FILE: ${AIRFLOW__CORE__SIMPLE_AUTH_MANAGER_PASSWORDS_FILE}
   TZ: ${TIMEZONE}
+  # Auth Manager - Choose one: SIMPLE_AUTH or FAB_AUTH (Keycloak)
+  # For SimpleAuth (local users), uncomment these:
+  # AIRFLOW__CORE__SIMPLE_AUTH_MANAGER_USERS: $${AIRFLOW__CORE__SIMPLE_AUTH_MANAGER_USERS}
+  # AIRFLOW__CORE__SIMPLE_AUTH_MANAGER_PASSWORDS_FILE: $${AIRFLOW__CORE__SIMPLE_AUTH_MANAGER_PASSWORDS_FILE}
+  # For FAB Auth Manager (Keycloak SSO), set these:
+  AIRFLOW__CORE__AUTH_MANAGER: ${AIRFLOW__CORE__AUTH_MANAGER}
+  AIRFLOW__WEBSERVER__CONFIG_FILE: ${AIRFLOW__WEBSERVER__CONFIG_FILE:-}
+  AIRFLOW__WEBSERVER__ACCESS_DENIED_MESSAGE: ${AIRFLOW__WEBSERVER__ACCESS_DENIED_MESSAGE:-Access is Denied}
+  # Keycloak Auth Manager Configuration
+  AIRFLOW__KEYCLOAK_AUTH_MANAGER__CLIENT_ID: ${KEYCLOAK_AIRFLOW_CLIENT_ID}
+  AIRFLOW__KEYCLOAK_AUTH_MANAGER__CLIENT_SECRET: ${KEYCLOAK_AIRFLOW_CLIENT_SECRET}
+  AIRFLOW__KEYCLOAK_AUTH_MANAGER__REALM: ${KEYCLOAK_REALM}
+  # Using host IP for Keycloak URL - works from both browser and container
+  AIRFLOW__KEYCLOAK_AUTH_MANAGER__SERVER_URL: ${AIRFLOW__KEYCLOAK_AUTH_MANAGER__SERVER_URL}
+  # Keycloak Configuration (for webserver_config.py if using FAB)
+  KEYCLOAK_BASE_URL: ${KEYCLOAK_BASE_URL}
+  KEYCLOAK_EXTERNAL_URL: ${KEYCLOAK_EXTERNAL_URL}
+  KEYCLOAK_REALM: ${KEYCLOAK_REALM}
+  KEYCLOAK_CLIENT_ID: ${KEYCLOAK_AIRFLOW_CLIENT_ID}
+  KEYCLOAK_AIRFLOW_CLIENT_SECRET: ${KEYCLOAK_AIRFLOW_CLIENT_SECRET}
   # Vault Secrets Backend
   AIRFLOW__SECRETS__BACKEND: ${AIRFLOW__SECRETS__BACKEND:-}
   AIRFLOW__SECRETS__BACKEND_KWARGS: ${AIRFLOW__SECRETS__BACKEND_KWARGS:-}
@@ -55,14 +81,26 @@ services:
   minio:
     image: minio/minio:RELEASE.2024-11-07T00-52-20Z
     container_name: minio-server
+    labels: *common-labels
     command: server /data --console-address ":9001"
     ports:
       - "${MINIO_SERVER_HOST_PORT}:9000"
       - "${MINIO_UI_HOST_PORT}:9001"
+    depends_on:
+      keycloak:
+        condition: service_healthy
     environment:
       MINIO_ROOT_USER: ${MINIO_ROOT_USER}
       MINIO_ROOT_PASSWORD: ${MINIO_ROOT_PASSWORD}
       TZ: ${TIMEZONE}
+      # Keycloak SSO (OIDC)
+      MINIO_IDENTITY_OPENID_CONFIG_URL: ${KEYCLOAK_BASE_URL}/realms/${KEYCLOAK_REALM}/.well-known/openid-configuration
+      MINIO_IDENTITY_OPENID_CLIENT_ID: minio
+      MINIO_IDENTITY_OPENID_CLIENT_SECRET: ${KEYCLOAK_MINIO_CLIENT_SECRET}
+      MINIO_IDENTITY_OPENID_CLAIM_NAME: policy
+      MINIO_IDENTITY_OPENID_DISPLAY_NAME: "Login with Keycloak"
+      MINIO_IDENTITY_OPENID_SCOPES: "openid,email,profile"
+      MINIO_IDENTITY_OPENID_REDIRECT_URI: http://localhost:${MINIO_UI_HOST_PORT}/oauth_callback
     restart: unless-stopped
     volumes:
       - ./mnt/data_drive/minio_data:/data
@@ -80,6 +118,7 @@ services:
   app-postgres-db:
     image: postgres:16
     container_name: app-postgres
+    labels: *common-labels
     restart: always
     environment:
       POSTGRES_USER: ${POSTGRES_APP_USER}
@@ -105,6 +144,7 @@ services:
   # -----------------------------------------------------
   etcd:
     container_name: milvus-etcd
+    labels: *common-labels
     image: quay.io/coreos/etcd:v3.5.12
     restart: unless-stopped
     environment:
@@ -136,6 +176,7 @@ services:
 
   milvus:
     container_name: milvus-standalone
+    labels: *common-labels
     image: milvusdb/milvus:v2.6.8
     command: ["milvus", "run", "standalone"]
     restart: unless-stopped
@@ -178,6 +219,7 @@ services:
   neo4j:
     image: neo4j:5.26.19-community
     container_name: neo4j-server
+    labels: *common-labels
     restart: unless-stopped
     ports:
       - "${NEO4J_HTTP_HOST_PORT}:7474"
@@ -226,6 +268,7 @@ services:
   spark-master:
     image: chatbot-spark:3.5.8-python3
     container_name: spark-master
+    labels: *common-labels
     command: /opt/spark/bin/spark-class org.apache.spark.deploy.master.Master
     restart: unless-stopped
     ports:
@@ -233,6 +276,7 @@ services:
       - '${SPARK_UI_HOST_PORT}:7077'
     environment:
       SPARK_DEFAULTS_CONF: spark.eventLog.enabled=true spark.eventLog.dir=file:///opt/spark/events
+      SPARK_DAEMON_JAVA_OPTS: -Dspark.ui.requestHeaderSize=65536
       PYTHONPATH: /opt/spark/work-dir
       TZ: ${TIMEZONE}
     volumes:
@@ -241,6 +285,7 @@ services:
       - ./mnt/data_drive/spark_data/spark_events:/opt/spark/events # mount to host
     networks:
       - llm-ops-net
+    # working_dir: /opt/spark
     healthcheck:
       test: ["CMD", "curl", "-f", "http://localhost:8080"]
       interval: 10s
@@ -251,6 +296,7 @@ services:
   spark-worker-1:
     image: chatbot-spark:3.5.8-python3
     container_name: spark-worker-1
+    labels: *common-labels
     command: /opt/spark/bin/spark-class org.apache.spark.deploy.worker.Worker spark://spark-master:7077
     restart: unless-stopped
     environment:
@@ -271,6 +317,7 @@ services:
   spark-worker-2:
     image: chatbot-spark:3.5.8-python3
     container_name: spark-worker-2
+    labels: *common-labels
     command: /opt/spark/bin/spark-class org.apache.spark.deploy.worker.Worker spark://spark-master:7077
     restart: unless-stopped
     environment:
@@ -292,12 +339,13 @@ services:
   spark-history:
     image: chatbot-spark:3.5.8-python3
     container_name: spark-history
+    labels: *common-labels
     command: /opt/spark/bin/spark-class org.apache.spark.deploy.history.HistoryServer
     restart: unless-stopped
     ports:
       - "${SPARK_HISTORY_SERVER_HOST_PORT}:18080"
     environment:
-      SPARK_HISTORY_OPTS: -Dspark.history.fs.logDirectory=file:///opt/spark/events
+      SPARK_HISTORY_OPTS: -Dspark.history.fs.logDirectory=file:///opt/spark/events -Dspark.ui.requestHeaderSize=65536
       TZ: ${TIMEZONE}
     depends_on:
       spark-master:
@@ -315,7 +363,100 @@ services:
       interval: 30s
       timeout: 10s
       retries: 3
-      
+
+  # OAuth2-proxy for Spark UIs (Master + History Server)
+  spark-oauth2-proxy:
+    image: quay.io/oauth2-proxy/oauth2-proxy:v7.6.0
+    container_name: spark-oauth2-proxy
+    labels: *common-labels
+    restart: unless-stopped
+    ports:
+      - "${SPARK_OAUTH_PROXY_PORT:-6025}:4180"
+    environment:
+      # OAuth2 Provider Configuration (Keycloak - manual endpoints to avoid localhost resolution)
+      OAUTH2_PROXY_PROVIDER: oidc
+      OAUTH2_PROXY_SKIP_OIDC_DISCOVERY: "true"
+      OAUTH2_PROXY_OIDC_ISSUER_URL: http://keycloak:8080/realms/paas
+      OAUTH2_PROXY_LOGIN_URL: http://localhost:${KEYCLOAK_HOST_PORT:-6061}/realms/paas/protocol/openid-connect/auth
+      OAUTH2_PROXY_REDEEM_URL: http://keycloak:8080/realms/paas/protocol/openid-connect/token
+      OAUTH2_PROXY_OIDC_JWKS_URL: http://keycloak:8080/realms/paas/protocol/openid-connect/certs
+      OAUTH2_PROXY_PROFILE_URL: http://keycloak:8080/realms/paas/protocol/openid-connect/userinfo
+      OAUTH2_PROXY_INSECURE_OIDC_SKIP_ISSUER_VERIFICATION: "true"
+      OAUTH2_PROXY_INSECURE_OIDC_ALLOW_UNVERIFIED_EMAIL: "true"
+      OAUTH2_PROXY_CLIENT_ID: spark
+      OAUTH2_PROXY_CLIENT_SECRET: ${KEYCLOAK_SPARK_CLIENT_SECRET}
+      OAUTH2_PROXY_REDIRECT_URL: http://localhost:${SPARK_OAUTH_PROXY_PORT:-6025}/oauth2/callback
+      # Cookie Configuration
+      OAUTH2_PROXY_COOKIE_SECRET: ${OAUTH2_PROXY_COOKIE_SECRET:-super-secret-cookie-key-32b}
+      OAUTH2_PROXY_COOKIE_SECURE: "false"
+      OAUTH2_PROXY_COOKIE_NAME: _spark_oauth2_proxy
+      # Proxy Configuration
+      OAUTH2_PROXY_HTTP_ADDRESS: 0.0.0.0:4180
+      OAUTH2_PROXY_UPSTREAMS: http://spark-master:8080/
+      OAUTH2_PROXY_EMAIL_DOMAINS: "*"
+      OAUTH2_PROXY_SKIP_PROVIDER_BUTTON: "false"
+      # Pass user info headers (tokens disabled to avoid 431 header too large)
+      OAUTH2_PROXY_SET_XAUTHREQUEST: "false"
+      OAUTH2_PROXY_PASS_ACCESS_TOKEN: "false"
+      OAUTH2_PROXY_PASS_USER_HEADERS: "false"
+      # Allow access based on Keycloak roles
+      OAUTH2_PROXY_OIDC_GROUPS_CLAIM: spark_roles
+      # Skip auth for health endpoints
+      OAUTH2_PROXY_SKIP_AUTH_ROUTES: "^/health$"
+      TZ: ${TIMEZONE}
+    depends_on:
+      keycloak:
+        condition: service_healthy
+      spark-master:
+        condition: service_healthy
+    networks:
+      - llm-ops-net
+    healthcheck:
+      disable: true
+
+  # OAuth2-proxy for Spark History Server
+  spark-history-oauth2-proxy:
+    image: quay.io/oauth2-proxy/oauth2-proxy:v7.6.0
+    container_name: spark-history-oauth2-proxy
+    labels: *common-labels
+    restart: unless-stopped
+    ports:
+      - "${SPARK_HISTORY_OAUTH_PROXY_PORT:-6026}:4180"
+    environment:
+      OAUTH2_PROXY_PROVIDER: oidc
+      OAUTH2_PROXY_SKIP_OIDC_DISCOVERY: "true"
+      OAUTH2_PROXY_OIDC_ISSUER_URL: http://keycloak:8080/realms/paas
+      OAUTH2_PROXY_LOGIN_URL: http://localhost:${KEYCLOAK_HOST_PORT:-6061}/realms/paas/protocol/openid-connect/auth
+      OAUTH2_PROXY_REDEEM_URL: http://keycloak:8080/realms/paas/protocol/openid-connect/token
+      OAUTH2_PROXY_OIDC_JWKS_URL: http://keycloak:8080/realms/paas/protocol/openid-connect/certs
+      OAUTH2_PROXY_PROFILE_URL: http://keycloak:8080/realms/paas/protocol/openid-connect/userinfo
+      OAUTH2_PROXY_INSECURE_OIDC_SKIP_ISSUER_VERIFICATION: "true"
+      OAUTH2_PROXY_INSECURE_OIDC_ALLOW_UNVERIFIED_EMAIL: "true"
+      OAUTH2_PROXY_CLIENT_ID: spark
+      OAUTH2_PROXY_CLIENT_SECRET: ${KEYCLOAK_SPARK_CLIENT_SECRET}
+      OAUTH2_PROXY_REDIRECT_URL: http://localhost:${SPARK_HISTORY_OAUTH_PROXY_PORT:-6026}/oauth2/callback
+      OAUTH2_PROXY_COOKIE_SECRET: ${OAUTH2_PROXY_COOKIE_SECRET:-super-secret-cookie-key-32b}
+      OAUTH2_PROXY_COOKIE_SECURE: "false"
+      OAUTH2_PROXY_COOKIE_NAME: _spark_history_oauth2_proxy
+      OAUTH2_PROXY_HTTP_ADDRESS: 0.0.0.0:4180
+      OAUTH2_PROXY_UPSTREAMS: http://spark-history:18080/
+      OAUTH2_PROXY_EMAIL_DOMAINS: "*"
+      OAUTH2_PROXY_SKIP_PROVIDER_BUTTON: "false"
+      OAUTH2_PROXY_SET_XAUTHREQUEST: "false"
+      OAUTH2_PROXY_PASS_ACCESS_TOKEN: "false"
+      OAUTH2_PROXY_PASS_USER_HEADERS: "false"
+      OAUTH2_PROXY_OIDC_GROUPS_CLAIM: spark_roles
+      TZ: ${TIMEZONE}
+    depends_on:
+      keycloak:
+        condition: service_healthy
+      spark-history:
+        condition: service_healthy
+    networks:
+      - llm-ops-net
+    healthcheck:
+      disable: true
+
   # -----------------------------------------------------
   # 6. ORCHESTRATOR: Airflow
   # -----------------------------------------------------
@@ -323,12 +464,13 @@ services:
     build:
       context: ./docker/airflow
       dockerfile: dockerfile
-    image: chatbot-airflow:3.1.4-python3.10
+    image: chatbot-airflow:3.1.7-python3.10
     profiles: ["build-only"]
 
   airflow-postgres:
     image: postgres:16
     container_name: airflow-postgres
+    labels: *common-labels
     restart: unless-stopped
     environment:
       POSTGRES_USER: ${AIRFLOW_POSTGRES_USER}
@@ -349,8 +491,9 @@ services:
       start_period: 10s
 
   airflow-webserver:
-    image: chatbot-airflow:3.1.4-python3.10
+    image: chatbot-airflow:3.1.7-python3.10
     container_name: airflow-webserver
+    labels: *common-labels
     restart: always
     depends_on:
       airflow-postgres:
@@ -383,8 +526,9 @@ services:
       start_period: 20s
 
   airflow-scheduler:
-    image: chatbot-airflow:3.1.4-python3.10
+    image: chatbot-airflow:3.1.7-python3.10
     container_name: airflow-scheduler
+    labels: *common-labels
     restart: always
     depends_on:
       airflow-postgres:
@@ -395,6 +539,7 @@ services:
         condition: service_healthy
     environment:
       <<: *airflow-env
+      NVIDIA_VISIBLE_DEVICES: all
     command: scheduler
     volumes:
       # data pipeline
@@ -404,10 +549,17 @@ services:
       - ../data-pipeline-repo/airflow/airflow_jobs:/opt/airflow/airflow_jobs
       - ../data-pipeline-repo/airflow:/opt/airflow/work-dir
       - ../data-pipeline-repo/spark:/opt/spark/work-dir
-      # airflow config 
+      # airflow config
       - ./docker/airflow/_config/:/opt/airflow/_config/
       # logs
       - ./mnt/data_drive/airflow_data/logs:/opt/airflow/logs
+    deploy:
+      resources:
+        reservations:
+          devices:
+            - driver: nvidia
+              count: all
+              capabilities: [gpu]
     networks:
       - llm-ops-net
     healthcheck:
@@ -418,8 +570,9 @@ services:
       start_period: 40s
 
   airflow-dag-processor:
-    image: chatbot-airflow:3.1.4-python3.10
+    image: chatbot-airflow:3.1.7-python3.10
     container_name: airflow-dag-processor
+    labels: *common-labels
     restart: always
     depends_on:
       airflow-postgres:
@@ -453,11 +606,126 @@ services:
       start_period: 20s
   
   # -----------------------------------------------------
-  # 7. Monitoring
+  # 7. ML EXPERIMENT TRACKING: MLflow
+  # -----------------------------------------------------
+  mlflow-postgres:
+    image: postgres:16
+    container_name: mlflow-postgres
+    labels: *common-labels
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: ${MLFLOW_POSTGRES_USER}
+      POSTGRES_PASSWORD: ${MLFLOW_POSTGRES_PASSWORD}
+      POSTGRES_DB: ${MLFLOW_POSTGRES_DB}
+      TZ: ${TIMEZONE}
+    ports:
+      - "${MLFLOW_POSTGRES_HOST_PORT}:5432"
+    volumes:
+      - ./mnt/data_drive/mlflow_data/postgres:/var/lib/postgresql/data
+    networks:
+      - llm-ops-net
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${MLFLOW_POSTGRES_USER} -d ${MLFLOW_POSTGRES_DB}"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 10s
+
+  mlflow:
+    image: ghcr.io/mlflow/mlflow:v3.9.0
+    container_name: mlflow-server
+    labels: *common-labels
+    restart: unless-stopped
+    depends_on:
+      mlflow-postgres:
+        condition: service_healthy
+      minio:
+        condition: service_healthy
+    environment:
+      MLFLOW_BACKEND_STORE_URI: postgresql://${MLFLOW_POSTGRES_USER}:${MLFLOW_POSTGRES_PASSWORD}@mlflow-postgres:5432/${MLFLOW_POSTGRES_DB}
+      MLFLOW_S3_ENDPOINT_URL: http://minio:9000
+      MLFLOW_ARTIFACTS_DESTINATION: s3://${MLFLOW_S3_BUCKET}
+      AWS_ACCESS_KEY_ID: ${MINIO_ROOT_USER}
+      AWS_SECRET_ACCESS_KEY: ${MINIO_ROOT_PASSWORD}
+      AWS_DEFAULT_REGION: us-east-1
+      MLFLOW_S3_IGNORE_TLS: "true"
+      MLFLOW_HOST: 0.0.0.0
+      MLFLOW_PORT: "5000"
+      TZ: ${TIMEZONE}
+    command:
+      - /bin/bash
+      - -c
+      - |
+        pip install --no-cache-dir psycopg2-binary boto3 2>/dev/null
+        mlflow server \
+          --backend-store-uri "postgresql://${MLFLOW_POSTGRES_USER}:${MLFLOW_POSTGRES_PASSWORD}@mlflow-postgres:5432/${MLFLOW_POSTGRES_DB}" \
+          --artifacts-destination "s3://${MLFLOW_S3_BUCKET}" \
+          --serve-artifacts \
+          --host 0.0.0.0 \
+          --port 5000 \
+          --allowed-hosts "localhost,localhost:5000,localhost:${MLFLOW_HOST_PORT},mlflow-server,mlflow-server:5000,mlflow-oauth2-proxy,mlflow-oauth2-proxy:4180"
+    ports:
+      - "${MLFLOW_HOST_PORT}:5000"
+    networks:
+      - llm-ops-net
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://localhost:5000/health')"]
+      interval: 15s
+      timeout: 5s
+      retries: 10
+      start_period: 30s
+
+  # OAuth2-proxy for MLflow UI
+  mlflow-oauth2-proxy:
+    image: quay.io/oauth2-proxy/oauth2-proxy:v7.6.0
+    container_name: mlflow-oauth2-proxy
+    labels: *common-labels
+    restart: unless-stopped
+    ports:
+      - "${MLFLOW_OAUTH_PROXY_PORT:-6036}:4180"
+    environment:
+      OAUTH2_PROXY_PROVIDER: oidc
+      OAUTH2_PROXY_SKIP_OIDC_DISCOVERY: "true"
+      OAUTH2_PROXY_OIDC_ISSUER_URL: http://keycloak:8080/realms/paas
+      OAUTH2_PROXY_LOGIN_URL: http://localhost:${KEYCLOAK_HOST_PORT:-6061}/realms/paas/protocol/openid-connect/auth
+      OAUTH2_PROXY_REDEEM_URL: http://keycloak:8080/realms/paas/protocol/openid-connect/token
+      OAUTH2_PROXY_OIDC_JWKS_URL: http://keycloak:8080/realms/paas/protocol/openid-connect/certs
+      OAUTH2_PROXY_PROFILE_URL: http://keycloak:8080/realms/paas/protocol/openid-connect/userinfo
+      OAUTH2_PROXY_INSECURE_OIDC_SKIP_ISSUER_VERIFICATION: "true"
+      OAUTH2_PROXY_INSECURE_OIDC_ALLOW_UNVERIFIED_EMAIL: "true"
+      OAUTH2_PROXY_CLIENT_ID: mlflow
+      OAUTH2_PROXY_CLIENT_SECRET: ${KEYCLOAK_MLFLOW_CLIENT_SECRET}
+      OAUTH2_PROXY_REDIRECT_URL: http://localhost:${MLFLOW_OAUTH_PROXY_PORT:-6036}/oauth2/callback
+      OAUTH2_PROXY_COOKIE_SECRET: ${OAUTH2_PROXY_COOKIE_SECRET:-super-secret-cookie-key-32b}
+      OAUTH2_PROXY_COOKIE_SECURE: "false"
+      OAUTH2_PROXY_COOKIE_NAME: _mlflow_oauth2_proxy
+      OAUTH2_PROXY_HTTP_ADDRESS: 0.0.0.0:4180
+      OAUTH2_PROXY_UPSTREAMS: http://mlflow-server:5000/
+      OAUTH2_PROXY_EMAIL_DOMAINS: "*"
+      OAUTH2_PROXY_SKIP_PROVIDER_BUTTON: "false"
+      OAUTH2_PROXY_SET_XAUTHREQUEST: "false"
+      OAUTH2_PROXY_PASS_ACCESS_TOKEN: "false"
+      OAUTH2_PROXY_PASS_USER_HEADERS: "false"
+      OAUTH2_PROXY_OIDC_GROUPS_CLAIM: mlflow_roles
+      OAUTH2_PROXY_SKIP_AUTH_ROUTES: "^/health$|^/api/"
+      TZ: ${TIMEZONE}
+    depends_on:
+      keycloak:
+        condition: service_healthy
+      mlflow:
+        condition: service_healthy
+    networks:
+      - llm-ops-net
+    healthcheck:
+      disable: true
+
+  # -----------------------------------------------------
+  # 8. MONITORING
   # -----------------------------------------------------
   cadvisor:
     image: gcr.io/cadvisor/cadvisor:v0.55.1
     container_name: cadvisor
+    labels: *common-labels
     restart: unless-stopped
     privileged: true
     ports:
@@ -466,10 +734,10 @@ services:
       - /:/rootfs:ro
       - /var/run:/var/run:ro
       - /sys:/sys:ro
-      - /home/felix/.local/share/docker/:/var/lib/docker:ro
+      - /home/chatbot/.local/share/docker/:/var/lib/docker:ro
       - /dev/disk/:/dev/disk:ro
-      - /run/user/1014/docker.sock:/opt/docker-rootless.sock:ro
-      - /run/user/1014/docker/containerd/containerd.sock:/opt/containerd-rootless.sock:ro
+      - /run/user/1020/docker.sock:/opt/docker-rootless.sock:ro
+      - /run/user/1020/docker/containerd/containerd.sock:/opt/containerd-rootless.sock:ro
     command:
       - "-store_container_labels=true"
       - "-docker=unix:///opt/docker-rootless.sock"
@@ -489,6 +757,7 @@ services:
   alertmanager:
     image: prom/alertmanager:v0.28.1
     container_name: alertmanager
+    labels: *common-labels
     restart: unless-stopped
     ports:
       - "${ALERTMANAGER_HOST_PORT}:9093"
@@ -509,6 +778,7 @@ services:
   prometheus:
     image: prom/prometheus:v3.9.1
     container_name: prometheus
+    labels: *common-labels
     restart: unless-stopped
     volumes:
       - ./docker/monitoring/prometheus.yml:/etc/prometheus/prometheus.yml
@@ -536,6 +806,7 @@ services:
   grafana:
     image: grafana/grafana:12.3.1
     container_name: grafana
+    labels: *common-labels
     restart: unless-stopped
     ports:
       - "${GRAFANA_HOST_PORT}:3000"
@@ -556,7 +827,7 @@ services:
       GF_AUTH_GENERIC_OAUTH_AUTH_URL: http://localhost:${KEYCLOAK_HOST_PORT}/realms/paas/protocol/openid-connect/auth
       GF_AUTH_GENERIC_OAUTH_TOKEN_URL: http://keycloak:8080/realms/paas/protocol/openid-connect/token
       GF_AUTH_GENERIC_OAUTH_API_URL: http://keycloak:8080/realms/paas/protocol/openid-connect/userinfo
-      GF_AUTH_GENERIC_OAUTH_ROLE_ATTRIBUTE_PATH: "contains(roles[*], 'admin') && 'Admin' || contains(roles[*], 'data_engineer') && 'Editor' || 'Viewer'"
+      GF_AUTH_GENERIC_OAUTH_ROLE_ATTRIBUTE_PATH: "contains(grafana_roles[*], 'Admin') && 'Admin' || contains(grafana_roles[*], 'Editor') && 'Editor' || 'Viewer'"
       GF_AUTH_GENERIC_OAUTH_EMAIL_ATTRIBUTE_PATH: email
       GF_AUTH_GENERIC_OAUTH_LOGIN_ATTRIBUTE_PATH: preferred_username
       GF_AUTH_GENERIC_OAUTH_NAME_ATTRIBUTE_PATH: name
@@ -587,6 +858,7 @@ services:
   renderer:
     image: grafana/grafana-image-renderer:v5.4.0
     container_name: renderer
+    labels: *common-labels
     restart: unless-stopped
     ports:
       - "${GRAFANA_IMAGE_RENDERER_HOST_PORT}:8081"
@@ -606,17 +878,21 @@ services:
       - llm-ops-net
 
   # -----------------------------------------------------
-  # 8. SECRET MANAGEMENT: HashiCorp Vault
+  # 9. SECRET MANAGEMENT: HashiCorp Vault
   # -----------------------------------------------------
   vault:
     image: hashicorp/vault:1.19
     container_name: vault
+    labels: *common-labels
     restart: unless-stopped
     ports:
       - "${VAULT_HOST_PORT}:8200"
     environment:
+      # Vault mode: "dev" (default) or "production"
+      VAULT_MODE: ${VAULT_MODE:-production}
       VAULT_ADDR: http://127.0.0.1:8200
       VAULT_API_ADDR: http://vault:8200
+      # Dev mode settings (ignored in production mode)
       VAULT_DEV_ROOT_TOKEN_ID: ${VAULT_DEV_ROOT_TOKEN}
       VAULT_DEV_LISTEN_ADDRESS: 0.0.0.0:8200
       # Pass credentials for init script
@@ -634,33 +910,42 @@ services:
       AIRFLOW_ADMIN_EMAIL: ${AIRFLOW_ADMIN_EMAIL}
       AIRFLOW__CORE__FERNET_KEY: ${AIRFLOW__CORE__FERNET_KEY}
       AIRFLOW__API__SECRET_KEY: ${AIRFLOW__API__SECRET_KEY}
+      MLFLOW_POSTGRES_USER: ${MLFLOW_POSTGRES_USER}
+      MLFLOW_POSTGRES_PASSWORD: ${MLFLOW_POSTGRES_PASSWORD}
+      MLFLOW_POSTGRES_DB: ${MLFLOW_POSTGRES_DB}
       BREVO_SMTP_LOGIN: ${BREVO_SMTP_LOGIN}
       BREVO_SMTP_KEY: ${BREVO_SMTP_KEY}
       ALERT_EMAIL_FROM: ${ALERT_EMAIL_FROM}
       ALERT_EMAIL_TO: ${ALERT_EMAIL_TO}
+      # AppRole secret IDs (reused from .env so they stay stable across restarts)
+      VAULT_AIRFLOW_SECRET_ID: ${VAULT_AIRFLOW_SECRET_ID}
+      VAULT_GRAFANA_SECRET_ID: ${VAULT_GRAFANA_SECRET_ID}
       TZ: ${TIMEZONE}
     cap_add:
       - IPC_LOCK
     volumes:
       - ./mnt/data_drive/vault_data:/vault/data
+      - ./docker/vault/config:/vault/config
       - ./docker/vault/policies:/vault/policies
       - ./docker/vault/scripts:/vault/scripts
+      - ./docker/vault/entrypoint.sh:/vault/entrypoint.sh
     networks:
       - llm-ops-net
     healthcheck:
-      test: ["CMD", "vault", "status"]
+      test: ["CMD-SHELL", "vault status || vault status 2>&1 | grep -q 'Sealed'"]
       interval: 30s
       timeout: 10s
       retries: 3
-      start_period: 10s
-    command: server -dev -dev-root-token-id="${VAULT_DEV_ROOT_TOKEN}"
+      start_period: 30s
+    entrypoint: ["sh", "/vault/entrypoint.sh"]
 
   # -----------------------------------------------------
-  # 9. IDENTITY MANAGEMENT: Keycloak
+  # 10. IDENTITY MANAGEMENT: Keycloak
   # -----------------------------------------------------
   keycloak-postgres:
     image: postgres:16
     container_name: keycloak-postgres
+    labels: *common-labels
     restart: unless-stopped
     environment:
       POSTGRES_USER: ${KEYCLOAK_DB_USER}
@@ -680,6 +965,7 @@ services:
   keycloak:
     image: quay.io/keycloak/keycloak:26.2
     container_name: keycloak
+    labels: *common-labels
     restart: unless-stopped
     ports:
       - "${KEYCLOAK_HOST_PORT}:8080"
@@ -688,10 +974,10 @@ services:
       KC_DB_URL: jdbc:postgresql://keycloak-postgres:5432/${KEYCLOAK_DB_NAME}
       KC_DB_USERNAME: ${KEYCLOAK_DB_USER}
       KC_DB_PASSWORD: ${KEYCLOAK_DB_PASSWORD}
-      KC_HOSTNAME: ${KEYCLOAK_HOSTNAME}
-      KC_HOSTNAME_PORT: ${KEYCLOAK_HOST_PORT}
-      KC_HOSTNAME_STRICT: "false"
-      KC_HOSTNAME_STRICT_HTTPS: "false"
+      # KC_HOSTNAME v2 (Keycloak 26+) - full URL forces consistent frontend URLs
+      KC_HOSTNAME: http://${KEYCLOAK_HOSTNAME}:${KEYCLOAK_HOST_PORT}
+      KC_HOSTNAME_STRICT: "true"
+      KC_HOSTNAME_BACKCHANNEL_DYNAMIC: "true"
       KC_HTTP_ENABLED: "true"
       KC_HEALTH_ENABLED: "true"
       KC_METRICS_ENABLED: "true"
@@ -709,7 +995,7 @@ services:
     networks:
       - llm-ops-net
     healthcheck:
-      test: ["CMD-SHELL", "exec 3<>/dev/tcp/localhost/8080 && echo -e 'GET /health/ready HTTP/1.1\\r\\nHost: localhost\\r\\n\\r\\n' >&3 && cat <&3 | grep -q '200' || exit 1"]
+      test: ["CMD-SHELL", "exec 3<>/dev/tcp/localhost/9000 && echo -e 'GET /health/ready HTTP/1.1\\r\\nHost: localhost\\r\\nConnection: close\\r\\n\\r\\n' >&3 && head -1 <&3 | grep -q '200'"]
       interval: 30s
       timeout: 10s
       retries: 5

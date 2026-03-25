@@ -11,7 +11,7 @@ with DAG(
 ) as dag:
     
     SparkSubmitOperator(
-    task_id="spark_config_testing",
+    task_id="test_spark_config",
     application="/opt/airflow/spark/jobs/test_pipeline/minio.py",
     conn_id="spark_default",
     verbose=True,

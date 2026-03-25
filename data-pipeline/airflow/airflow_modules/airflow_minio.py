@@ -17,14 +17,61 @@ class AirflowMinioStorage:
         self.storage_conn = None
 
     def load_config(self, config_name="demo_minio"):
-        # 1. Load Configurations
+        # 1. Load Configurations from YAML (legacy method)
         try:
             self.storage_libs = read_yaml(self.STORAGE_CONFIG_PATH)['minio']
             self.storage_conn = read_yaml(self.STORAGE_CONN_PATH)[config_name]
-            print(">>> Configuration loaded.")
+            print(">>> Configuration loaded from YAML.")
         except Exception as e:
             print(f"!!! Error loading config: {e}")
             sys.exit(1)
+
+    def load_config_from_connection(self, conn_id):
+        """
+        Load MinIO configuration from Airflow Connection (backed by Vault).
+
+        Connection field mapping:
+            - host:port  -> endpoint
+            - login      -> access_key
+            - password   -> secret_key
+            - schema     -> bucket
+            - extra      -> additional settings (JSON)
+
+        Usage:
+            storage = AirflowMinioStorage()
+            storage.load_config_from_connection("minio_bronze")
+            storage.init_client()
+        """
+        try:
+            from airflow.hooks.base import BaseHook
+
+            conn = BaseHook.get_connection(conn_id)
+
+            # Build endpoint from host:port
+            endpoint = conn.host
+            if conn.port:
+                endpoint = f"{conn.host}:{conn.port}"
+
+            self.storage_conn = {
+                "endpoint": endpoint,
+                "access_key": conn.login,
+                "secret_key": conn.password,
+                "bucket": conn.schema
+            }
+
+            # Parse extra for ssl_enabled
+            ssl_enabled = False
+            if conn.extra:
+                extra = json.loads(conn.extra) if isinstance(conn.extra, str) else conn.extra
+                ssl_enabled = extra.get("ssl_enabled", False)
+
+            self.storage_libs = {"ssl_enabled": ssl_enabled}
+
+            print(f">>> Configuration loaded from Airflow connection '{conn_id}'.")
+
+        except Exception as e:
+            print(f"!!! Error loading from connection: {e}")
+            raise
 
     def init_client(self):
         # 2. Initialize MinIO Client

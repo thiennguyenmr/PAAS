@@ -5,7 +5,7 @@ from datetime import datetime
 
 
 with DAG(
-    dag_id="spark_hello_world",
+    dag_id="test_spark_hello_world",
     start_date=datetime(2026, 1, 12),
     schedule=None,
     catchup=False,
@@ -25,7 +25,7 @@ with DAG(
     
     spark_job = SparkSubmitOperator(
         task_id="hello_world_task",
-        application="/opt/airflow/spark/jobs/test_pipeline/hello_world.py",
+        application="/opt/spark/work-dir/spark_jobs/test_pipeline/hello_world.py",
         conn_id="spark_default",
         deploy_mode="client",
         name="hello_world",

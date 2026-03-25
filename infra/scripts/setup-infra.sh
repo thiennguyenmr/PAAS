@@ -68,6 +68,9 @@ docker run --rm -v $(pwd)/mnt/data_drive/etcd_data:/data alpine sh -c "rm -rf /d
 echo ">> Cleaning Vault directory..."
 docker run --rm -v $(pwd)/mnt/data_drive/vault_data:/data alpine sh -c "rm -rf /data/* && mkdir -p /data"
 
+echo ">> Cleaning MLflow directory..."
+docker run --rm -v $(pwd)/mnt/data_drive/mlflow_data:/data alpine sh -c "rm -rf /data/* && mkdir -p /data/postgres"
+
 echo ">> Cleaning Keycloak PostgreSQL directory..."
 docker run --rm -v $(pwd)/mnt/data_drive/keycloak_data:/data alpine sh -c "rm -rf /data/* && mkdir -p /data/postgres"
 
@@ -91,13 +94,12 @@ echo "==================================================================="
 echo "Step 4: Starting services in correct order"
 echo "==================================================================="
 
-# Stage 1: Storage services
+# Stage 1: Storage and database foundations
 echo ""
-echo ">> Stage 1: Starting storage services..."
-echo "   - MinIO (S3)"
+echo ">> Stage 1: Starting base storage services..."
 echo "   - App PostgreSQL"
 echo "   - Etcd (for Milvus)"
-docker compose up -d minio app-postgres-db
+docker compose up -d app-postgres-db
 
 echo ">> Waiting for storage services to be healthy (30s)..."
 sleep 30
@@ -118,11 +120,12 @@ echo ">> Stage 3: Starting security services..."
 echo "   - HashiCorp Vault (secrets management)"
 docker compose up -d vault
 
-echo ">> Waiting for Vault to be healthy (15s)..."
-sleep 15
+echo ">> Waiting for Vault to initialize and run secrets setup (30s)..."
+echo "   (entrypoint handles init, unseal, secrets, and AppRole setup automatically)"
+sleep 30
 
-echo ">> Initializing Vault secrets..."
-docker compose exec -T vault sh /vault/scripts/init-secrets.sh || echo "Vault secrets initialization skipped or failed"
+echo ">> Checking Vault status..."
+docker compose exec -T vault vault status 2>&1 | head -5 || echo "Vault not ready yet (will continue initializing in background)"
 
 echo "   - Keycloak PostgreSQL"
 docker compose up -d keycloak-postgres
@@ -135,6 +138,15 @@ docker compose up -d keycloak
 
 echo ">> Waiting for Keycloak to initialize (30s)..."
 sleep 30
+
+# Stage 3b: MinIO (depends on Keycloak for SSO)
+echo ""
+echo ">> Stage 3b: Starting MinIO (S3 with Keycloak SSO)..."
+echo "   - MinIO (S3)"
+docker compose up -d minio
+
+echo ">> Waiting for MinIO to be healthy (15s)..."
+sleep 15
 
 # Stage 4: Spark cluster
 echo ""
@@ -154,24 +166,45 @@ docker compose up -d spark-history
 echo ">> Waiting for Spark cluster to stabilize (10s)..."
 sleep 10
 
-# Stage 5: Airflow
+# Stage 5: MLflow
 echo ""
-echo ">> Stage 5: Starting Airflow..."
+echo ">> Stage 5: Starting MLflow..."
+echo "   - MLflow PostgreSQL"
+docker compose up -d mlflow-postgres
+
+echo ">> Waiting for MLflow DB to be healthy (10s)..."
+sleep 10
+
+echo "   - MLflow Tracking Server"
+docker compose up -d mlflow
+
+echo ">> Waiting for MLflow to initialize (15s)..."
+sleep 15
+
+# Stage 6: Airflow
+echo ""
+echo ">> Stage 6: Starting Airflow..."
 echo "   - Airflow PostgreSQL"
 docker compose up -d airflow-postgres
 
 echo ">> Waiting for Airflow DB to be healthy (15s)..."
 sleep 15
 
-echo "   - Airflow services"
-docker compose up -d airflow-webserver airflow-scheduler airflow-dag-processor
+echo "   - Airflow Webserver (runs db migrate on first start)"
+docker compose up -d airflow-webserver
+
+echo ">> Waiting for Airflow DB migration to complete (30s)..."
+sleep 30
+
+echo "   - Airflow Scheduler & DAG Processor"
+docker compose up -d airflow-scheduler airflow-dag-processor
 
 echo ">> Waiting for Airflow to initialize (20s)..."
 sleep 20
 
-# Stage 6: Monitoring
+# Stage 7: Monitoring
 echo ""
-echo ">> Stage 6: Starting monitoring services..."
+echo ">> Stage 7: Starting monitoring services..."
 echo "   - cAdvisor"
 docker compose up -d cadvisor
 
@@ -191,6 +224,14 @@ echo "   - Grafana"
 docker compose up -d grafana
 
 echo ">> Waiting for monitoring stack to stabilize (10s)..."
+sleep 10
+
+# Stage 8: OAuth2 Proxies
+echo ""
+echo ">> Stage 8: Starting OAuth2 proxies..."
+docker compose up -d spark-oauth2-proxy spark-history-oauth2-proxy mlflow-oauth2-proxy
+
+echo ">> Waiting for OAuth2 proxies (10s)..."
 sleep 10
 
 echo ""
@@ -222,6 +263,10 @@ echo ""
 echo "Processing:"
 echo "  Spark Master:      http://localhost:6020"
 echo "  Spark History:     http://localhost:6022"
+echo ""
+echo "ML Tracking:"
+echo "  MLflow:            http://localhost:6035  (direct)"
+echo "  MLflow (SSO):      http://localhost:6036  (via Keycloak)"
 echo ""
 echo "Orchestration:"
 echo "  Airflow:           http://localhost:6031  (admin/admin123)"
